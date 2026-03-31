@@ -1,0 +1,101 @@
+@AbapCatalog.sqlViewName: 'ZPFIVARCRABYOI'
+@ClientHandling.type: #CLIENT_DEPENDENT
+@ClientHandling.algorithm: #SESSION_VARIABLE
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@AbapCatalog.preserveKey:true
+//@EndUserText.label: 'Private view for CO Variances and RA By Order And Item'
+@VDM.viewType: #COMPOSITE
+@VDM.private:true
+@ObjectModel.usageType.serviceQuality: #A
+@ObjectModel.usageType.sizeCategory: #L
+@ObjectModel.usageType.dataClass: #TRANSACTIONAL
+@Metadata.ignorePropagatedAnnotations: true
+
+define view ZP_COVarcRsltsAnlysByOrderItem
+  with parameters
+    P_FromFiscalYearPeriod : fis_jahrper,
+    P_ToFiscalYearPeriod   : fis_jahrper
+//    P_RAVersion            : versn
+  as select from P_ProductCostCtrlgOrderAndItem as _Order
+    inner join   P_COVarcResultsAnlysCube       as _RACube on  _Order.ObjectInternalID = _RACube.ControllingObject
+                                                           and _Order.OrderID          = _RACube.OrderID
+{
+
+  key _Order.ObjectInternalID             as ControllingObject,
+
+      _Order.OrderID,
+      _Order.CompanyCode,
+      _Order.Plant,
+      _RACube.CostElement,
+      _RACube.PartnerCostObject,
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Variances
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Variances in Global Currency
+      sum(_RACube.InptPrVarcAmtInCtrlgAreaCrcy)   as InptPrVarcAmtInGlobalCrcy,
+      sum(_RACube.InptQtyVarcAmtInCtrlgAreaCrcy)  as InptQtyVarcAmtInGlobalCrcy,
+      sum(_RACube.RsceUsgeVarcAmtInCtrlgAreaCrcy) as RsceUsgeVarcAmtInGlobalCrcy,
+      sum(_RACube.InptRmngVarcAmtInCtrlgAreaCrcy) as InptRmngVarcAmtInGlobalCrcy,
+      sum(_RACube.MixedPrVarcAmtInCtrlgAreaCrcy)  as MixedPrVarcAmtInGlobalCrcy,
+      sum(_RACube.OutpPrVarcAmtInCtrlgAreaCrcy)   as OutpPrVarcAmtInGlobalCrcy,
+      sum(_RACube.LotSizeVarcAmtInCtrlgAreaCrcy)  as LotSizeVarcAmtInGlobalCrcy,
+      sum(_RACube.OutpQtyVarcAmtInCtrlgAreaCrcy)  as OutpQtyVarcAmtInGlobalCrcy,
+      sum(_RACube.OutpRmngVarcAmtInCtrlgAreaCrcy) as OutpRmngVarcAmtInGlobalCrcy,
+      sum(_RACube.ScrapVarcAmtInCtrlgAreaCrcy)    as ScrapVarcAmtInGlobalCrcy,
+      sum( case when _RACube.ControllingDebitCreditCode = 'A' or _RACube.ControllingDebitCreditCode = 'L'
+             then _RACube.ScrapVarcAmtInCtrlgAreaCrcy
+          else 0
+      end)                                as CrdtScrapVarcAmtInGlobalCrcy,
+      sum(case when _RACube.ControllingDebitCreditCode = 'H' or _RACube.ControllingDebitCreditCode = 'S'
+             then _RACube.ScrapVarcAmtInCtrlgAreaCrcy
+          else 0
+      end)                                as DebitScrapVarcAmtInGlobalCrcy,
+
+      // Variances in Company Code Currency
+      sum(_RACube.InptPriceVarcAmtInObjCrcy)      as InptPriceVarcAmtInObjCrcy,
+      sum(_RACube.InptQtyVarcAmtInObjCrcy)        as InptQtyVarcAmtInObjCrcy,
+      sum(_RACube.RsceUsgeVarcAmtInObjCrcy)       as RsceUsgeVarcAmtInObjCrcy,
+      sum(_RACube.InputRmngVarcAmtInObjCrcy)      as InputRmngVarcAmtInObjCrcy,
+      sum(_RACube.MixedPrVarcAmtInObjCrcy)        as MixedPrVarcAmtInObjCrcy,
+      sum(_RACube.OutpPrVarcAmtInObjCrcy)         as OutpPrVarcAmtInObjCrcy,
+      sum(_RACube.LotSizeVarcAmtInObjCrcy)        as LotSizeVarcAmtInObjCrcy,
+      sum(_RACube.OutpQtyVarcAmtInObjCrcy)        as OutpQtyVarcAmtInObjCrcy,
+      sum(_RACube.OutputRmngVarcAmtInObjCrcy)     as OutputRmngVarcAmtInObjCrcy,
+      sum(_RACube.ScrapVarcAmtInObjCrcy)          as ScrapVarcAmtInObjCrcy,
+      sum( case when _RACube.ControllingDebitCreditCode = 'A' or _RACube.ControllingDebitCreditCode = 'L'
+             then _RACube.ScrapVarcAmtInObjCrcy
+          else 0
+      end)                                as CreditScrapVarcAmtInObjCrcy,
+      sum(case when _RACube.ControllingDebitCreditCode = 'H' or _RACube.ControllingDebitCreditCode = 'S'
+             then ScrapVarcAmtInObjCrcy
+          else 0
+      end)                                as DebitScrapVarcAmtInObjCrcy,
+
+      sum(ConfirmationScrapQuantity)      as ScrapQuantity,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // WIP & Reserves
+      /////////////////////////////////////////////////////////////////////////////////////
+      sum(WIPCostInCtrlgAreaCrcy)         as WIPAmountInGlobalCrcy,
+      sum(UnrlzdCostRsrvAmtInGlobCrcy)    as UnrlzdCostRsrvAmtInGlobCrcy,
+      sum(WIPCostInObjCrcy)               as WIPAmountInObjCrcy,
+      sum(UnrlzdCostRsrvAmtInObjCrcy)     as UnrlzdCostRsrvAmtInObjCrcy,
+      sum(WIPQuantity)                    as WIPQuantity
+
+}
+where _Order.OrderID = '000000816707' and 
+  (
+        FiscalYear >= substring($parameters.P_FromFiscalYearPeriod, 1 ,4)
+    and FiscalYear <= substring($parameters.P_ToFiscalYearPeriod, 1 ,4)
+    and FiscalYearPeriod   >= $parameters.P_FromFiscalYearPeriod
+    and FiscalYearPeriod   <= $parameters.P_ToFiscalYearPeriod
+  )
+  and   ControllingVersion = '000' // $parameters.P_RAVersion
+group by
+  _Order.ObjectInternalID,
+  _Order.OrderID,
+  CompanyCode,
+  Plant,
+  CostElement,
+  PartnerCostObject
