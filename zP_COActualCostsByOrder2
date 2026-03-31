@@ -1,0 +1,46 @@
+@AbapCatalog.sqlViewName: 'ZPFIACTCOSTORD2'
+@ClientHandling.type: #CLIENT_DEPENDENT
+@ClientHandling.algorithm: #SESSION_VARIABLE
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+//@EndUserText.label: 'Private view for CO Order Actual Costs'
+@VDM.viewType: #COMPOSITE
+//@VDM.private:true
+@ObjectModel.usageType.serviceQuality: #D
+@ObjectModel.usageType.sizeCategory: #XXL
+@ObjectModel.usageType.dataClass: #TRANSACTIONAL
+@Metadata.ignorePropagatedAnnotations: true
+
+define view zP_COActualCostsByOrder2 
+
+  with parameters
+    P_FromFiscalYearPeriod  : fis_jahrper,
+    P_ToFiscalYearPeriod    : fis_jahrper
+  as select from zp_COactualcostbyOrder(
+                 P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                 P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod)
+{
+  key ControllingObject,
+      OrderID,
+      CompanyCode,
+      CostElement,
+      origin,
+      PartnerCostObject,
+      
+
+      CreditActlCostInGlobalCrcy,
+      DebitActlCostInGlobalCrcy,
+      CrdtActlFxdCostInGlobalCrcy,
+      DebitActlFxdCostInGlobalCrcy,
+      CreditActlDlvCostInGlobalCrcy,
+      CreditActlCostInObjCrcy,
+      DebitActlCostInObjCrcy,
+      CreditActlDlvCostInObjCrcy,
+      DebitActlFixedCostInObjCrcy,
+      CreditActlFixedCostInObjCrcy,
+
+      ActualQuantity,
+      ActualFixedQuantity
+
+}     //    where OrderID = '000000816707'
+ 
