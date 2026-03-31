@@ -1,0 +1,140 @@
+@AbapCatalog.sqlViewName: 'ZPMFGORDPLN'
+@VDM.viewType: #COMPOSITE
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@ClientHandling.algorithm: #SESSION_VARIABLE
+@AbapCatalog.buffering.status: #NOT_ALLOWED
+@Metadata.ignorePropagatedAnnotations: true
+@VDM.private:true
+@ObjectModel.usageType.sizeCategory: #XL
+@ObjectModel.usageType.serviceQuality: #C
+@ObjectModel.usageType.dataClass: #TRANSACTIONAL
+//@EndUserText.label: 'Plan and Standard Costs Cube for Manufacturing Orders'
+//Planning category to distinguish order plan costs and standard costs
+//No fiscal year period restricition, for target costs calculation
+
+define view zP_COMfgOrderPlanStdCube1
+  with parameters
+    P_FromFiscalYearPeriod : fis_jahrper,
+    P_ToFiscalYearPeriod   : fis_jahrper
+
+  as select from I_FinancialPlanningEntryItem as _PlanningEntryItem
+    inner join   I_Ledger                     as _Ledger on _PlanningEntryItem.Ledger = _Ledger.Ledger and _Ledger.IsLeadingLedger = 'X'  
+    inner join   I_MfgOrdPlngCat              as _PlngCat on _PlanningEntryItem.PlanningCategory = _PlngCat.PlanningCategory
+{
+  key   cast (case AccountAssignmentType
+        when 'OR' then concat(AccountAssignmentType, OrderID)
+        else concat(concat(AccountAssignmentType, OrderID), OrderItem) end as j_objnr )      as   ControllingObject,
+  key   cast (case
+        when AccountAssignmentType = 'OR' and OrderItem = '0000' then concat(AccountAssignmentType, OrderID) //non-joint production
+        else concat(concat('OP', OrderID), OrderItem) //joint production
+        end as j_objnr)                                                                      as   ControllingObjectForOutput,
+  key   ControllingDebitCreditCode,
+  key   _PlanningEntryItem.PlanningCategory, // plan cost & standard cost category
+  key   OrderID,
+        //units
+  key   CostSourceUnit,
+  key   GlobalCurrency,
+  key   CompanyCodeCurrency,
+        //        Lot-size independent indicator for target cost calculation
+  key   FiscalYearPeriod,
+        CompanyCode,
+        Plant,
+        _PlanningEntryItem.GLAccount,
+        case when OriginCostCenter is initial
+           then case when Material is initial
+           then ' ' else concat(Plant,concat('/',Material))
+        end
+            when OriginCostCtrActivityType is initial
+            then OriginCostCenter
+        else concat( OriginCostCenter,concat('/',OriginCostCtrActivityType) )
+      end as origin,
+    
+        IsLotSizeIndependent,
+
+        PlngCatIsForOrdReltdPlnCost,
+        PlngCatIsForMatlCostEstPlnCost,
+
+        sum(case when ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L'
+              then AmountInGlobalCurrency
+              else 0
+        end)                                                                                 as   CreditPlanCostInGlobalCrcy,
+        sum(case when ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S'
+                then AmountInGlobalCurrency
+                else 0
+        end)                                                                                 as   DebitPlanCostInGlobalCrcy,
+        sum(case when ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L'
+              then FixedAmountInGlobalCrcy
+              else 0
+        end)                                                                                 as   CreditPlanFxdCostInGlobalCrcy,
+        sum(case when ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S'
+                then FixedAmountInGlobalCrcy
+                else 0
+        end)                                                                                 as   DebitPlanFxdCostInGlobalCrcy,
+        sum(case when ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L'
+              then AmountInCompanyCodeCurrency
+              else 0
+        end)                                                                                 as   CreditPlanCostInCoCodeCrcy,
+        sum(case when ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S'
+                then AmountInCompanyCodeCurrency
+                else 0
+        end)                                                                                 as   DebitPlanCostInCoCodeCrcy,
+        sum(case when ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L'
+              then case
+              when AmountInGlobalCurrency <> 0
+                 then cast( round(cast(division(FixedAmountInGlobalCrcy, AmountInGlobalCurrency, 6) as abap.dec(14, 6))  //fixed amount is always less than total amount here
+                            * AmountInCompanyCodeCurrency, 2)
+                          as abap.curr(23, 2) )
+                 else 0
+              end
+            else 0
+            end )                                                                            as   CreditPlanFxdCostInCoCodeCrcy,
+        sum(case when ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S'
+              then case
+              when AmountInGlobalCurrency <> 0
+                 then cast( round(cast(division(FixedAmountInGlobalCrcy, AmountInGlobalCurrency, 6) as abap.dec(14, 6))  //fixed amount is always less than total amount here
+                            * AmountInCompanyCodeCurrency, 2)
+                          as abap.curr(23, 2) )
+                 else 0
+              end
+            else 0
+            end )                                                                            as   DebitPlanFxdCostInCoCodeCrcy,
+
+
+        //Quantity
+                sum(ValuationQuantity)                                                               as   TotalQuantity
+}
+where
+  (
+          AccountAssignmentType          =  'OR'
+    or    AccountAssignmentType          =  'OP'
+  )
+  and     OrderID                        <> ''
+//  and(
+//    (
+//          PlngCatIsForOrdReltdPlnCost    =  'X'
+//      and FiscalYearPeriod               >= $parameters.P_FromFiscalYearPeriod
+//      and FiscalYearPeriod               <= $parameters.P_ToFiscalYearPeriod
+//    )
+//    or    PlngCatIsForMatlCostEstPlnCost =  'X'
+//  )
+group by
+  AccountAssignmentType,
+  OrderID,
+  OrderItem,
+  GLAccount,
+  OriginCostCenter,
+  OriginCostCtrActivityType,
+  ControllingDebitCreditCode,
+  _PlanningEntryItem.PlanningCategory,
+  CostSourceUnit,
+  GlobalCurrency,
+  CompanyCodeCurrency,
+  FiscalYearPeriod,
+  IsLotSizeIndependent,
+  PlngCatIsForOrdReltdPlnCost,
+  PlngCatIsForMatlCostEstPlnCost,
+  CompanyCode,
+  Plant,
+  Material
+  
+  
