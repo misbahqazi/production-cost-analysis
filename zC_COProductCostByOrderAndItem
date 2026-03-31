@@ -1,0 +1,636 @@
+@AbapCatalog.sqlViewName: 'ZCFIPRDTCOSTITM'
+@ClientHandling.type: #CLIENT_DEPENDENT
+@ClientHandling.algorithm: #SESSION_VARIABLE
+//@VDM.viewType:  #CONSUMPTION
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@AccessControl.privilegedAssociations:  [ '_CreatedByContactCard', '_LastChangedByUserContactCard' ]
+@EndUserText.label: 'CO Product Cost By Orders and Items'
+@Search.searchable: true
+
+@VDM.viewType: #COMPOSITE
+@Analytics: { dataCategory: #CUBE }
+@Analytics.dataExtraction.enabled: true
+
+@ObjectModel.usageType.serviceQuality: #D
+@ObjectModel.usageType.sizeCategory: #XXL
+@ObjectModel.usageType.dataClass: #MIXED
+@Metadata.ignorePropagatedAnnotations: true
+@AccessControl.personalData.blocking: #BLOCKED_DATA_EXCLUDED
+    
+@ObjectModel: { supportedCapabilities: [#ANALYTICAL_PROVIDER, #SQL_DATA_SOURCE, #CDS_MODELING_DATA_SOURCE],
+                modelingPattern: #ANALYTICAL_CUBE }
+
+define view zC_COProductCostByOrderAndItem
+  with parameters
+//    @Semantics.fiscal.yearPeriod: true
+    P_FromFiscalYearPeriod  : fins_fyearperiod,
+//    @Semantics.fiscal.yearPeriod: true
+    P_ToFiscalYearPeriod    : fins_fyearperiod,
+    @Consumption.defaultValue: 'PLANORD02'
+    @Consumption.hidden: true
+    P_PlanningCategory      : fcom_category,
+    @Consumption.defaultValue: '000'
+    @Consumption.hidden: true
+    P_ResultAnalysisVersion : versn_abgr,
+    @Consumption.defaultValue: ''
+    @Consumption.hidden: true
+    P_ValuationType         : bwtar_d,
+    @Consumption.hidden: true
+    @Environment.systemField: #SYSTEM_LANGUAGE
+    P_Language              : sylangu,
+    //'20' represents controlling area currency, and '70' represents object currency
+    P_CurrencyRole          : fac_crcyrole
+
+  as select from zI_COProductCostByOrderAndItem(
+                   P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                   P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod,
+                   P_PlanningCategory     : $parameters.P_PlanningCategory,
+               //    P_ResultAnalysisVersion   : $parameters.P_ResultAnalysisVersion,
+                   P_ValuationType : $parameters.P_ValuationType) _CostByOrderAndItem
+{
+      @Search: {
+              defaultSearchElement: true,
+              fuzzinessThreshold: 0.8,
+              ranking: #HIGH
+            }
+  @Consumption: {
+        semanticObject: 'ProductionOrder'
+      }          
+  @ObjectModel.foreignKey.association: '_OrderNumber'
+  key OrderID,
+  key cast(ltrim(OrderItem, '0') as fco_order_item)                                                             as           OrderItem,
+  @AnalyticsDetails.query.totals: #SHOW
+  @ObjectModel.foreignKey.association: '_GLAccount'
+  key GLaccount,
+  key origin, 
+
+      OrderInternalID, //Object number of order header
+//      ObjectInternalID,
+
+      @Search: {
+        defaultSearchElement: true,
+        fuzzinessThreshold: 0.8,
+        ranking: #HIGH
+      }
+      @ObjectModel.foreignKey.association: '_MfgOrderType'
+      OrderType,
+      OrderCategory,
+      ExternalOrder,
+      @Search: {
+        defaultSearchElement: true,
+        fuzzinessThreshold: 0.8,
+        ranking: #HIGH
+      }
+      OrderDescription,
+
+      @Search: {
+        defaultSearchElement: true,
+        fuzzinessThreshold: 0.8,
+        ranking: #HIGH
+      }
+      Plant,
+      @Semantics.unitOfMeasure:true
+      cast(BaseUnit as fis_meinh)                                                                               as           ProductionUnit,
+
+
+      //assignment
+      @ObjectModel.foreignKey.association: '_ControllingArea'
+      ControllingArea,
+      @ObjectModel.foreignKey.association: '_Companycode'
+      CompanyCode,
+      BusinessArea,
+       @ObjectModel.foreignKey.association: '_ProfitCenter'
+      ProfitCenter,
+      ResponsibleCostCenter,
+      cast(
+      case WBSElementInternalID
+        when '00000000' then '00000000'
+        else WBSElementInternalID
+      end as fis_pph_pspel_c)                                                                                   as           WBSElementInternalID,
+
+      //Sales Order
+      SalesOrder,
+
+      //Joint Production
+      MfgOrderHasMultipleItems,
+
+      ActualCostsCostingVariant,
+
+      CreatedByUser,
+      CreationDate,
+      LastChangedByUser,
+      LastChangeDate,
+      TechnicalCompletionDate,
+
+      //Order Items
+      @Search: {
+        defaultSearchElement: true,
+        fuzzinessThreshold: 0.8,
+        ranking: #HIGH
+      }
+      @ObjectModel.foreignKey.association: '_Material'
+      Material,
+      _Material.MaterialType,
+      ValuationClass,
+      cast(MRPPlant as fis_co_pwerk)                                                                            as           MRPPlant,
+      cast(StorageLocation as fis_lgort_d)                                                                      as           StorageLocation,
+      ProductionVersion,
+
+      //Order Header PPS Orders
+      ScheduledBasicEndDate,
+      ScheduledReleaseDate,
+      ActualStartDate,
+      ConfirmedEndDate,
+      ActualReleasedDate,
+
+      //Order Status
+      @ObjectModel.foreignKey.association: '_Status'
+      ControllingObjectStatus,
+
+
+      // Currencies
+      @Semantics.currencyCode: true
+      cast( case $parameters.P_CurrencyRole
+          when '20' then ControllingAreaCurrency
+          else CompanyCodeCurrency
+      end as cficuky )                                                                                          as           DisplayCurrency,
+
+
+      // Actual costs
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      cast( case $parameters.P_CurrencyRole
+          when '20' then CreditActlCostInCtrlgAreaCrcy
+          else CreditActlCostInCoCodeCrcy
+      end as fis_cr_actlcost_in_dspcrcy )                                                                       as           CreditActlCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitActlCostInCtrlgAreaCrcy
+          else DebitActlCostInCoCodeCrcy
+      end as fis_dr_actlcost_in_dspcrcy )                                                                       as           DebitActlCostInDspCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      cast( case $parameters.P_CurrencyRole
+          when '20' then ActlCostInCtrlgAreaCrcy
+          else ActlCostInCoCodeCrcy
+      end as fis_actlcost_in_dspcrcy )                                                                          as           ActlCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitActlVarblCostInCOCrcy
+          else DebitActlVarblCostInCoCodeCrcy
+      end as fis_dr_actlvarblcost_indspcrcy )                                                                   as           DebitActlVarblCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then CrdtActlVarblCostInCOCrcy
+          else CreditActlVarblCostInCCCrcy
+      end as fis_cr_actlvarblcost_indspcrcy )                                                                   as           CrdtActlVarblCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then ActlVarblCostInCtrlgAreaCrcy
+          else ActlVarblCostInCoCodeCrcy
+      end as fis_actlvarblcost_in_dspcrcy )                                                                     as           ActlVarblCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then CrdtActlFxdCostInCOCrcy
+          else CreditActlFixedCostInCCCrcy
+      end as fis_cr_actlfxdcost_in_dspcrcy )                                                                    as           CrdtActlFxdCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitActlFxdCostInCOCrcy
+          else DebitActlFixedCostInCoCodeCrcy
+      end as fis_dr_actlfxdcost_in_dspcrcy )                                                                    as           DebitActlFxdCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then ActlFixedCostInCtrlgAreaCrcy
+          else ActlFixedCostInCoCodeCrcy
+      end as fis_actlfixedcost_in_dspcrcy )                                                                     as           ActlFixedCostInDspCrcy,
+
+
+      // Plan costs
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then CreditPlanCostInCtrlgAreaCrcy
+          else CreditPlanCostInCoCodeCrcy
+      end as fis_cr_plancost_in_dspcrcy )                                                                       as           CreditPlanCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitPlanCostInCtrlgAreaCrcy
+          else DebitPlanCostInCoCodeCrcy
+      end as fis_dr_plancost_in_dspcrcy )                                                                       as           DebitPlanCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then CrdtPlnFxdCostInCtrlgAreaCrcy
+          else CreditPlanFixedCostInCCCrcy
+      end as fis_cr_plnfxdcost_in_dspcrcy )                                                                     as           CrdtPlnFxdCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitPlnFxdCostInCtrlgAreaCrcy
+          else DebitPlanFixedCostInCoCodeCrcy
+      end as fis_dr_plnfxdcost_in_dspcrcy )                                                                     as           DebitPlnFxdCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then CrdtPlnVarblCostInCOCrcy
+          else CreditPlanVarblCostInCCCrcy
+      end as fis_cr_plnvarblcost_in_dspcrcy )                                                                   as           CrdtPlnVarblCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitPlnVarblCostInCOCrcy
+          else DebitPlanVarblCostInCoCodeCrcy
+      end as fis_dr_plnvarblcost_in_dspcrcy )                                                                   as           DebitPlnVarblCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then PlanCostInCtrlgAreaCrcy
+          else PlanCostInCoCodeCrcy
+      end as fis_plancost_in_dspcrcy )                                                                          as           PlanCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then PlanFixedCostInCtrlgAreaCrcy
+          else PlanFixedCostInCoCodeCrcy
+      end as fis_planfixedcost_in_dspcrcy )                                                                     as           PlanFixedCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then PlanVarblCostInCtrlgAreaCrcy
+          else PlanVarblCostInCoCodeCrcy
+      end as fis_planvarblcost_in_dspcrcy )                                                                     as           PlanVarblCostInDspCrcy,
+
+      // Standard Costs
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitStdCostInGlobalCrcy
+          else DebitStdCostInCoCodeCrcy
+      end as fis_dr_stdcost_in_dspcrcy )                                                                        as           DebitStdCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitStdFxdCostInGlobalCrcy
+          else DebitStdFxdCostInCoCodeCrcy
+      end as fis_dr_stdfxdcost_in_dspcrcy )                                                                     as           DebitStdFxdCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitStdVarblCostInGlobalCrcy
+          else DebitStdVarblCostInCoCodeCrcy
+      end as fis_dr_stdvarblcost_indspcrcy )                                                                    as           DebitStdVarblCostInDspCrcy,
+
+
+      // Target costs
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then CrdtTargetCostInCtrlgAreaCrcy
+          else CreditTargetCostInCoCodeCrcy
+      end as fis_cr_tgtcost_in_dspcrcy )                                                                        as           CrdtTargetCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitTargetCostInCtrlgAreaCrcy
+          else DebitTargetCostInCoCodeCrcy
+      end as fis_dr_tgtcost_in_dspcrcy )                                                                        as           DebitTargetCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then TargetCostInCtrlgAreaCrcy
+          else TargetCostInCoCodeCrcy
+      end as fis_tgtcost_in_dspcrcy )                                                                           as           TargetCostInDspCrcy,
+
+      // Control Costs at Plan
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then CrdtPlanCtrlCostInGlobCrcy
+          else CrdtPlanCtrlCostInCCCrcy
+      end as fis_cr_planctrlcost_indspcrcy )                                                                    as           CrdtPlanCtrlCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitPlanCtrlCostInGlobCrcy
+          else DebitPlanCtrlCostInCCCrcy
+      end as fis_dr_planctrlcost_indspcrcy )                                                                    as           DebitPlanCtrlCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then PlanCtrlCostInGlobCrcy
+          else PlanCtrlCostInCoCodeCrcy
+      end as fis_planctrlcost_in_dspcrcy )                                                                      as           PlanCtrlCostInDspCrcy,
+
+      // Control Costs at Actual
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then CrdtActlCtrlCostInGlobCrcy
+          else CrdtActlCtrlCostInCCCrcy
+      end as fis_cr_actlctrlcost_indspcrcy )                                                                    as           CrdtActlCtrlCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitActlCtrlCostInGlobCrcy
+          else DebitActlCtrlCostInCCCrcy
+      end as fis_dr_actlctrlcost_indspcrcy )                                                                    as           DebitActlCtrlCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then ActlCtrlCostInGlobCrcy
+          else ActlCtrlCostInCoCodeCrcy
+      end as fis_actlctrlcost_in_dspcrcy )                                                                      as           ActlCtrlCostInDspCrcy,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Variances
+      /////////////////////////////////////////////////////////////////////////////////////
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then InptPrVarcAmtInCtrlgAreaCrcy
+          else InptPriceVarcAmtInCoCodeCrcy
+      end as fis_inptprvarcamt_in_dspcrcy )                                                                     as           InptPrVarcAmtInDspCrcy,
+      
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      @EndUserText.label: 'Tgt/Act CostVar'
+      case $parameters.P_CurrencyRole
+          when '20' then ActlCostInCtrlgAreaCrcy -   TargetCostInCtrlgAreaCrcy
+          else ActlCostInCoCodeCrcy - TargetCostInCoCodeCrcy end   as tgtactvar,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then InptQtyVarcAmtInCtrlgAreaCrcy
+          else InptQtyVarcAmtInCoCodeCrcy
+      end as fis_inptqtyvarcamt_in_dspcrcy )                                                                    as           InptQtyVarcAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then RsceUsgeVarcAmtInCtrlgAreaCrcy
+          else RsceUsgeVarcAmtInCoCodeCrcy
+      end as fis_rsceusgevarcamt_in_dspcrcy )                                                                   as           RsceUsgeVarcAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then InptRmngVarcAmtInCtrlgAreaCrcy
+          else InputRmngVarcAmtInCoCodeCrcy
+      end as fis_inptrmngvarcamt_in_dspcrcy )                                                                   as           InptRmngVarcAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then MixedPrVarcAmtInCtrlgAreaCrcy
+          else MixedPrVarcAmtInCoCodeCrcy
+      end as fis_mixedprvarcamt_in_dspcrcy )                                                                    as           MixedPrVarcAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then OutpPrVarcAmtInCtrlgAreaCrcy
+          else OutpPrVarcAmtInCoCodeCrcy
+      end as fis_outpprvarcamt_in_dspcrcy )                                                                     as           OutpPrVarcAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then LotSizeVarcAmtInCtrlgAreaCrcy
+          else LotSizeVarcAmtInCoCodeCrcy
+      end as fis_lotsizevarcamt_in_dspcrcy )                                                                    as           LotSizeVarcAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then OutpQtyVarcAmtInCtrlgAreaCrcy
+          else OutpQtyVarcAmtInCoCodeCrcy
+      end as fis_qutpqtyvarcamt_in_dspcrcy )                                                                    as           OutpQtyVarcAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then OutpRmngVarcAmtInCtrlgAreaCrcy
+          else OutputRmngVarcAmtInCoCodeCrcy
+      end as fis_outprmngvarcamt_in_dspcrcy )                                                                   as           OutpRmngVarcAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then ScrapVarcAmtInCtrlgAreaCrcy
+          else ScrapVarcAmtInCoCodeCrcy
+      end as fis_scrapvarcamt_in_dspcrcy )                                                                      as           ScrapVarcAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast ( case $parameters.P_CurrencyRole
+          when '20' then InptPrVarcAmtInCtrlgAreaCrcy
+                        + InptQtyVarcAmtInCtrlgAreaCrcy
+                        + RsceUsgeVarcAmtInCtrlgAreaCrcy
+                        + InptRmngVarcAmtInCtrlgAreaCrcy
+                        + MixedPrVarcAmtInCtrlgAreaCrcy
+                        + OutpPrVarcAmtInCtrlgAreaCrcy
+                        + LotSizeVarcAmtInCtrlgAreaCrcy
+                        + OutpQtyVarcAmtInCtrlgAreaCrcy
+                        + OutpRmngVarcAmtInCtrlgAreaCrcy
+          else InptPriceVarcAmtInCoCodeCrcy
+                        + InptQtyVarcAmtInCoCodeCrcy
+                        + RsceUsgeVarcAmtInCoCodeCrcy
+                        + InputRmngVarcAmtInCoCodeCrcy
+                        + MixedPrVarcAmtInCoCodeCrcy
+                        + OutpPrVarcAmtInCoCodeCrcy
+                        + LotSizeVarcAmtInCoCodeCrcy
+                        + OutpQtyVarcAmtInCoCodeCrcy
+                        + OutputRmngVarcAmtInCoCodeCrcy
+      end as fis_costvarc_in_dspcrcy )                                                                          as           CostVarianceInDspCrcy,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Results Analysis
+      /////////////////////////////////////////////////////////////////////////////////////
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then WIPCostInCtrlgAreaCrcy
+          else WIPCostInCoCodeCrcy
+      end as fis_wipcost_in_dspcrcy )                                                                           as           WIPCostInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then UnrlzdCostRsrvAmtInGlobCrcy
+          else UnrlzdCostRsrvAmtInCoCodeCrcy
+      end as fis_abgruekfk )                                                                                    as           UnrlzdCostRsrvAmtInDspCrcy,
+
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      @DefaultAggregation: #SUM
+      cast( case $parameters.P_CurrencyRole
+          when '20' then TotalWIPAmountInCOCrcy
+          else TotalWIPAmountInCoCodeCrcy
+      end as abgbesges )                                                                                        as           TotalWIPAmountInDspCrcy,
+
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Output Quantities
+      /////////////////////////////////////////////////////////////////////////////////////
+      @DefaultAggregation: #SUM
+      @Semantics: { quantity : {unitOfMeasure: 'ProductionUnit'} }
+      PlanOutputQuantity,
+      @DefaultAggregation: #SUM
+      @Semantics: { quantity : {unitOfMeasure: 'ProductionUnit'} }
+      ActualOutputQuantity,
+      @DefaultAggregation: #SUM
+      @Semantics: { quantity : {unitOfMeasure: 'ProductionUnit'} }
+      ActualQuantity,
+      @Semantics: { quantity : {unitOfMeasure: 'ProductionUnit'} }
+      @EndUserText.label: 'Plan Quantity'
+      PlanQuantity,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Calculates deviations
+      /////////////////////////////////////////////////////////////////////////////////////
+      //Actual - Plan deviation
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitActlPlnDiffCostInCOCrcy
+          else DebitActlPlnDiffCostInCCCrcy
+      end as fis_dractlplndiffcostindspcrcy )                                                                   as           DebitActlPlnDiffCostInDspCrcy,
+
+      @DefaultAggregation: #NONE
+      cast( case $parameters.P_CurrencyRole
+                when '20' then CtrlgAreaCrcyActlPlanDiffPct
+                else CoCodeCrcyActlPlanDiffPercent
+            end as fis_dr_cocrcy_actlplndiffpct )                                                               as           DebitActlPlanDiffPercent,
+
+      //Target - Actual deviation
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      cast( case $parameters.P_CurrencyRole
+          when '20' then DebitActlTgtDiffCostInCOCrcy
+          else DebitActlTgtDiffCostInCCCrcy
+      end as fis_dractltgtdiffcostindspcrcy )                                                                   as           DebitActlTgtDiffCostInDspCrcy,
+
+      @DefaultAggregation: #NONE
+      cast( case $parameters.P_CurrencyRole
+                when '20' then CtrlgAreaCrcyActlTgtDiffPct
+                else CoCodeCrcyActlTgtDiffPercent
+            end as fis_dr_cocrcy_actltgtdiffpct )                                                               as           DebitActlTgtDiffPercent,
+
+      //Control at Plan - Target deviation
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      cast( case $parameters.P_CurrencyRole
+          when '20' then (PlanCtrlCostInGlobCrcy - TargetCostInCtrlgAreaCrcy)
+          else (PlanCtrlCostInCoCodeCrcy - TargetCostInCoCodeCrcy)
+      end as fis_plnctrltgtdiff_indspcrcy )                                                                     as           PlnCtrlTgtDiffCostInDspCrcy,
+
+      @DefaultAggregation: #NONE
+      cast( case $parameters.P_CurrencyRole
+            when '20' then
+      ( case when TargetCostInCtrlgAreaCrcy <> 0
+      then round(
+             division((PlanCtrlCostInGlobCrcy - TargetCostInCtrlgAreaCrcy),
+                        TargetCostInCtrlgAreaCrcy, 5) * 100, 2)
+      else case PlanCtrlCostInGlobCrcy - TargetCostInCtrlgAreaCrcy
+             when 0 then 0
+             else 100
+           end
+      end )
+      else( case when TargetCostInCoCodeCrcy <> 0
+      then round(
+             division((PlanCtrlCostInCoCodeCrcy - TargetCostInCoCodeCrcy),
+                        TargetCostInCoCodeCrcy, 5) * 100, 2)
+      else case PlanCtrlCostInCoCodeCrcy - TargetCostInCoCodeCrcy
+             when 0 then 0
+             else 100
+           end
+      end )
+      end as fis_dspcrcy_plnctrltgtdiffpct )                                                                    as           DspCrcyPlnCtrlTgtDiffPct,
+
+
+      //Control at Actual - Target deviation
+      @Semantics: { amount : {currencyCode: 'DisplayCurrency'} }
+      cast( case $parameters.P_CurrencyRole
+          when '20' then (ActlCtrlCostInGlobCrcy - TargetCostInCtrlgAreaCrcy)
+          else (ActlCtrlCostInCoCodeCrcy - TargetCostInCoCodeCrcy)
+      end as fis_actlctrltgtdiff_indspcrcy )                                                                    as           ActlCtrlTgtDiffCostInDspCrcy,
+
+      @DefaultAggregation: #NONE
+      cast( case $parameters.P_CurrencyRole
+            when '20' then
+      ( case when TargetCostInCtrlgAreaCrcy <> 0
+      then round(
+             division((ActlCtrlCostInGlobCrcy - TargetCostInCtrlgAreaCrcy),
+                        TargetCostInCtrlgAreaCrcy, 5) * 100, 2)
+      else case ActlCtrlCostInGlobCrcy - TargetCostInCtrlgAreaCrcy
+             when 0 then 0
+             else 100
+           end
+      end )
+      else( case when TargetCostInCoCodeCrcy <> 0
+      then round(
+             division((ActlCtrlCostInCoCodeCrcy - TargetCostInCoCodeCrcy),
+                        TargetCostInCoCodeCrcy, 5) * 100, 2)
+      else case ActlCtrlCostInCoCodeCrcy - TargetCostInCoCodeCrcy
+             when 0 then 0
+             else 100
+           end
+      end )
+      end as fis_dspcrcy_actlctrltgtdiffpct )                                                                   as           DspCrcyActlCtrlTgtDiffPct,
+
+      //Output quantity
+      @Semantics: { quantity : {unitOfMeasure: 'ProductionUnit'} }
+      cast(ActlPlanDiffOutputQuantity as fis_actlplandiffoutputquantity)                                        as           ActlPlanDiffOutputQuantity,
+     
+      @DefaultAggregation: #NONE
+      ActlPlanDiffOutpQtyPercent,
+
+
+      @Search: {
+        defaultSearchElement: true,
+        fuzzinessThreshold: 0.8,
+        ranking: #HIGH
+      }
+      cast(_Material._Text[1: Language = $parameters.P_Language].MaterialName as fis_material_text)             as           MaterialName,
+      _GLAccount,_OrderNumber,
+      _Material,
+      _ControllingArea,
+      _ProfitCenter,
+      _CompanyCode,
+      _MfgOrderType,
+      _status,
+      _CreatedByContactCard,
+      _LastChangedByUserContactCard
+}
+
+//where OrderID = '000000816707'
