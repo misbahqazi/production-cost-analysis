@@ -1,0 +1,171 @@
+@AbapCatalog.sqlViewName: 'ZPPCCOPLNTGTWIPO'
+@VDM.viewType: #COMPOSITE
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@ClientHandling.algorithm: #SESSION_VARIABLE
+@AbapCatalog.buffering.status: #NOT_ALLOWED
+@Metadata.ignorePropagatedAnnotations: true
+@ClientHandling.type: #CLIENT_DEPENDENT
+@AbapCatalog.compiler.compareFilter: true
+//@EndUserText.label: 'CO Plan or Target Values by Order'
+//@VDM.private:true
+@ObjectModel.usageType.serviceQuality: #A
+@ObjectModel.usageType.sizeCategory: #XL
+@ObjectModel.usageType.dataClass: #TRANSACTIONAL
+@AbapCatalog.preserveKey:true
+
+define view zP_COPCCOrdPlnTgtWIPByOrderItm
+  with parameters
+    P_FromFiscalYearPeriod : fis_jahrper,
+    P_ToFiscalYearPeriod   : fis_jahrper
+
+  as select from P_ProductCostCtrlgOrderAndItem as _ProductCostCtrlgOrder
+  inner join I_COPlanTargetByPeriod as _COPlanTargetByPeriod
+             on _COPlanTargetByPeriod.ControllingObject = _ProductCostCtrlgOrder.ObjectInternalID 
+             and _COPlanTargetByPeriod.OrderID = _ProductCostCtrlgOrder.OrderID
+             
+  left outer to one join I_TargetCostVariant as _TargetCostVariant
+             on _ProductCostCtrlgOrder.ControllingArea = _TargetCostVariant.ControllingArea    
+             and _COPlanTargetByPeriod.ControllingVersion = _TargetCostVariant.TargetCostVariant
+                 
+  left outer to one join I_MfgOrdPlngCat
+             on ( ( PlngCatIsForMatlCostEstPlnCost = 'X' and ComparisonCostingVariantType = 'P' and ControllingValueType = '05')
+             or   ( PlngCatIsForOrdReltdPlnCost = 'X' and ComparisonCostingVariantType = '' and ControllingValueType = '05') )
+{
+  key _ProductCostCtrlgOrder.ObjectInternalID as ControllingObject,
+  key ControllingValueType,
+      //  key UnitOfMeasure,
+
+      _ProductCostCtrlgOrder.OrderID,
+      CompanyCode,
+      Plant,
+      _COPlanTargetByPeriod.CostElement,
+      _COPlanTargetByPeriod.PartnerCostObject,
+      PlanningCategory,
+
+
+      sum(case when ControllingValueType = '01' and (ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L')
+          then AmountInCtrlgAreaCrcy
+          else 0
+      end)                                                     as CreditPlanCostInGlobalCrcy,
+      sum(case when ControllingValueType = '01' and (ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S')
+          then AmountInCtrlgAreaCrcy
+          else 0
+      end)                                                     as DebitPlanCostInGlobalCrcy,
+      sum(case when ControllingValueType = '01' and (ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L')
+          then FixedAmountInCtrlgAreaCrcy
+          else 0
+      end)                                                     as CreditPlanFxdCostInGlobalCrcy,
+      sum(case when ControllingValueType = '01' and (ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S')
+          then FixedAmountInCtrlgAreaCrcy
+          else 0
+      end)                                                     as DebitPlanFxdCostInGlobalCrcy,
+      sum(case when ControllingValueType = '01' and (ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L')
+          then AmountInObjectCurrency
+          else 0
+      end)                                                     as CreditPlanCostInCoCodeCrcy,
+      sum(case when ControllingValueType = '01' and (ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S')
+          then AmountInObjectCurrency
+          else 0
+      end)                                                     as DebitPlanCostInCoCodeCrcy,
+      sum(case when ControllingValueType = '01' and (ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L')
+          then case
+                   when AmountInCtrlgAreaCrcy <> 0
+                       then cast ( round(cast(division(FixedAmountInCtrlgAreaCrcy, AmountInCtrlgAreaCrcy, 8) as abap.dec(14, 8))
+                                   * AmountInObjectCurrency, 2)
+                                 as abap.curr(23, 2))
+                       else 0
+                   end
+          else 0
+      end)                                                     as CreditPlanFxdCostInCoCodeCrcy,
+      sum(case when ControllingValueType = '01' and (ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S')
+          then case
+                   when AmountInCtrlgAreaCrcy <> 0
+                       then cast ( round(cast(division(FixedAmountInCtrlgAreaCrcy, AmountInCtrlgAreaCrcy, 8) as abap.dec(14, 8))
+                                   * AmountInObjectCurrency, 2)
+                                 as abap.curr(23, 2))
+                       else 0
+                   end
+          else 0
+      end)                                                     as DebitPlanFxdCostInCoCodeCrcy,
+
+
+      sum(case when ControllingValueType = '05' and (ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L')
+            then AmountInCtrlgAreaCrcy
+          else 0
+      end)                                                     as CreditTargetCostInGlobalCrcy,
+      sum(case when ControllingValueType = '05' and (ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S')
+            then  AmountInCtrlgAreaCrcy
+          else 0
+      end)                                                     as DebitTargetCostInGlobalCrcy,
+
+      sum(case when ControllingValueType = '05' and (ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L')
+            then AmountInObjectCurrency
+          else 0
+      end)                                                     as CreditTargetCostInCoCodeCrcy,
+      sum(case when ControllingValueType = '05' and (ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S')
+            then  AmountInObjectCurrency
+          else 0
+      end)                                                     as DebitTargetCostInCoCodeCrcy,
+
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Derive target WIP related key figures
+      /////////////////////////////////////////////////////////////////////////////////////
+      //      AmountInCtrlgAreaCrcy                                  as TargetWIPGlobalCurr,
+      //      AmountInObjectCurrency                                 as TargetWIPCompCodeCurr,
+
+      sum(case when ControllingValueType = '06' and (ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L')
+          then AmountInCtrlgAreaCrcy
+          else 0
+      end)                                                     as CreditTargetWIPInGlobalCrcy,
+      sum(case when ControllingValueType = '06' and (ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S')
+          then AmountInCtrlgAreaCrcy
+          else 0
+      end)                                                     as DebitTargetWIPInGlobalCrcy,
+
+      sum(case when ControllingValueType = '06' and (ControllingDebitCreditCode = 'A' or ControllingDebitCreditCode = 'L')
+      then AmountInObjectCurrency
+          else 0
+      end)                                                     as CreditTargetWIPInCoCodeCrcy,
+      sum(case when ControllingValueType = '06' and (ControllingDebitCreditCode = 'H' or ControllingDebitCreditCode = 'S')
+         then AmountInObjectCurrency
+         else 0
+      end)                                                     as DebitTargetWIPInCoCodeCrcy,
+
+            case when ControllingValueType = '05'
+                  then TotalQuantity
+                  else 0
+                  end                                              as TargetWIPQuantity
+      //      case when ControllingValueType = '05'
+      //            then FixedQuantity
+      //            else 0 end                                       as TargetWIPFixedQuantity
+
+}
+where
+  (
+    (
+      (
+           ControllingValueType  =  '01'
+        or ControllingValueType  =  '05'
+      )
+      and(
+           OrderCategory         =  '04'
+        or OrderCategory         =  '05'
+      )
+    )
+    or     ControllingValueType  =  '06'
+  )
+  and  FiscalYearPeriod     >= $parameters.P_FromFiscalYearPeriod
+  and  FiscalYearPeriod     <= $parameters.P_ToFiscalYearPeriod
+  and FiscalYear >= substring($parameters.P_FromFiscalYearPeriod, 1 ,4)
+  and FiscalYear <= substring($parameters.P_ToFiscalYearPeriod, 1 ,4)
+group by
+  _ProductCostCtrlgOrder.ObjectInternalID,
+  ControllingValueType,
+  //  UnitOfMeasure,
+  _ProductCostCtrlgOrder.OrderID,
+  CompanyCode,
+  Plant,
+  CostElement,
+  PartnerCostObject,
+  PlanningCategory,TotalQuantity
