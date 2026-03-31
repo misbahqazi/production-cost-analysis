@@ -1,0 +1,53 @@
+CLASS zcl_acdoca DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+    INTERFACES: IF_AMDP_MARKER_HDB.
+
+    CLASS-METHODS:
+    get_sorted
+        FOR TABLE FUNCTION ZTF_ACDOCA.
+
+ENDCLASS.
+
+
+CLASS zcl_acdoca IMPLEMENTATION.
+METHOD get_sorted
+    BY DATABASE FUNCTION
+    FOR HDB
+    LANGUAGE SQLSCRIPT
+    OPTIONS READ-ONLY
+    using acdoca.
+*     acdocp.
+
+    return select DISTINCT rclnt,rbukrs,racct,aufnr,ukostl,ulstar,matnr,werks,objnr,parob1,
+           case when ukostl = ' '
+        then case when matnr = ' ' then ' '
+        else concat(werks,concat('/',matnr))
+      end
+        when ulstar = ' '
+        then ukostl
+        else concat(ukostl,concat('/',ulstar))
+      end as origin,runit
+            from acdoca
+            WHERE aufnr <> ' '
+            ORDER BY racct,aufnr;
+
+*           union all select DISTINCT rclnt,rbukrs,racct,aufnr,ukostl,ulstar,matnr,werks,' ' as objnr,'' as parob1,
+*           case when ukostl = ' '
+*        then case when matnr = ' ' then ' '
+*        else concat(werks,concat('/',matnr))
+*      end
+*        when ulstar = ' '
+*        then ukostl
+*        else concat(ukostl,concat('/',ulstar))
+*      end as origin,' ' as runit
+*            from acdocp
+*            WHERE aufnr <> ' '
+*            ORDER BY racct,aufnr;
+
+
+  ENDMETHOD.
+ENDCLASS.
