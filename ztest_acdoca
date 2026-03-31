@@ -1,0 +1,89 @@
+@AbapCatalog.sqlViewName: 'ZTESTACDOCA'
+@AbapCatalog.compiler.compareFilter: true
+@AbapCatalog.preserveKey: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'acdoca'
+@Metadata.ignorePropagatedAnnotations: true
+define view ztest_acdoca
+as select distinct from P_ProductCostCtrlgOrderAndItem as _Order inner join 
+ ztf_acdoca b on _Order.OrderID = b.aufnr 
+            and _Order.CompanyCode  = b.rbukrs
+//            and _Order.Plant        = b.werks
+ 
+ {
+    key b.racct,
+    key b.aufnr as OrderID,
+    key _Order.CompanyCode,
+    key _Order.Plant,
+    key _Order.OrderItem,
+    key b.objnr as ControllingObject,
+    key b.origin,
+      b.parob1 as Partnercostobject,
+//      b.matnr,
+//      b.werks,
+     
+      _Order.OrderInternalID, //Object number of order header
+      _Order.ObjectInternalID,
+
+      _Order.OrderType,
+      _Order.OrderCategory,
+      _Order.ExternalOrder,
+      _Order.OrderDescription,
+//      _Order.Plant,
+      b.runit as BaseUnit,
+
+      //assignment
+      _Order.ControllingArea,
+//      _Order.CompanyCode,
+      _Order.BusinessArea,
+      _Order.ProfitCenter,
+      _Order.ResponsibleCostCenter,
+      //WBS Element
+      _Order.WBSElementInternalID,
+      //Production Version
+      _Order.ProductionVersion,
+      
+      
+      //Sales Order
+      _Order.SalesOrder,
+
+      _Order.Material,
+      _Order.MRPPlant,
+      _Order.StorageLocation,
+      @Semantics.unitOfMeasure:true
+      _Order.ProductionUnit,
+
+      _Order.IsMarkedForDeletion,
+      _Order.MfgOrderHasMultipleItems,
+
+      _Order.ActualCostsCostingVariant,
+
+      //Process
+      _Order.PlannedReleaseDate,
+      _Order.PlannedCompletionDate,
+      _Order.CreatedByUser,
+      _Order.CreationDate,
+      _Order.LastChangedByUser,
+      _Order.LastChangeDate,
+
+      _Order.TechnicalCompletionDate,
+
+      //Order Header PPS Orders
+      _Order.ScheduledBasicEndDate,
+      _Order.ScheduledReleaseDate,
+      _Order.ActualStartDate,
+      _Order.ConfirmedEndDate,
+      _Order.ActualReleasedDate,
+      _Order.OrderIsEventBasedPosting,
+
+      //Order Status
+//      ControllingObjectStatus,
+
+      // Currencies
+//      @Semantics.currencyCode: true
+      _Order.Currency                                                 as CompanyCodeCurrency
+
+      
+       }
+       
+//       where _Order.OrderID = '000000816707'
