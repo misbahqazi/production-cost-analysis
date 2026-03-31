@@ -1,0 +1,367 @@
+@AbapCatalog.sqlViewName: 'ZPFIPRODCOST'
+@ClientHandling.type: #CLIENT_DEPENDENT
+@ClientHandling.algorithm: #SESSION_VARIABLE
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Production Cost Analysis'
+
+@VDM.viewType: #COMPOSITE
+
+@ObjectModel.usageType.sizeCategory: #XXL
+@ObjectModel.usageType.serviceQuality: #C
+@ObjectModel.usageType.dataClass: #MIXED
+
+define view zP_COProductCostByOrderAndItem
+  with parameters
+    P_FromFiscalYearPeriod : fins_fyearperiod,
+    P_ToFiscalYearPeriod   : fins_fyearperiod,
+    P_PlanningCategory     : fcom_category
+
+  as select distinct from           ztest_acdoca as  _Order
+    inner join             I_COPCCObjectStatus            as _Status                  on  _Order.OrderInternalID = _Status.ControllingObject
+                                                                                      and _Order.OrderID         = _Status.OrderID
+                                                
+
+    left outer to one join zP_COActualCostsByOrder2(
+                           P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                           P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod) on  _Order.ObjectInternalID = zP_COActualCostsByOrder2.ControllingObject
+                                                                                      and _Order.OrderID          = zP_COActualCostsByOrder2.OrderID
+                                                                                      and _Order.CompanyCode      = zP_COActualCostsByOrder2.CompanyCode
+                                                                                      and _Order.racct            = zP_COActualCostsByOrder2.CostElement
+                                                                                      and _Order.origin           = zP_COActualCostsByOrder2.origin
+                                                          
+
+    //Plan cost for order category 10/40
+    left outer to one join zP_COMfgOrderPlanStdByObject(
+                              P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                              P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod,
+                              P_PlngCatIsForOrdReltdPlnCost     : 'X' )                      as _MfgOrderPlanCost     on _Order.ObjectInternalID = _MfgOrderPlanCost.ControllingObject
+                                                                                                                      and _Order.OrderID         = _MfgOrderPlanCost.OrderID
+                                                                                                                      and _Order.CompanyCode     = _MfgOrderPlanCost.CompanyCode
+                                                                                                                      and _Order.Plant           = _MfgOrderPlanCost.Plant
+                                                                                                                      and _Order.racct           = _MfgOrderPlanCost.GLAccount
+                                                                                                                      and _Order.origin          = _MfgOrderPlanCost.origin
+                                                                                                                   and(
+                                                                                                                     _Order.OrderCategory     = '10'
+                                                                                                                     or _Order.OrderCategory  = '40'
+                                                                                                                   )
+  
+  //Standard cost for order category 10/40
+    left outer to one join zP_COMfgOrderPlanStdByObject(
+                              P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                              P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod,
+                              P_PlngCatIsForOrdReltdPlnCost     : ' ' )                      as _MfgOrderStdCost      on _Order.ObjectInternalID    = _MfgOrderStdCost.ControllingObject
+                                                                                                                      and _Order.OrderID            = _MfgOrderStdCost.OrderID
+                                                                                                                      and _Order.CompanyCode        = _MfgOrderStdCost.CompanyCode
+                                                                                                                      and _Order.Plant              = _MfgOrderStdCost.Plant
+                                                                                                                      and _Order.racct              = _MfgOrderStdCost.GLAccount
+                                                                                                                      and _Order.origin             = _MfgOrderStdCost.origin
+                                                                                                                   and(
+                                                                                                                     _Order.OrderCategory     = '10'
+                                                                                                                     or _Order.OrderCategory  = '40'
+                                                                                                                   )
+  //Plan cost for order category 04/05
+    left outer to one join zP_COPCCOrdPlnTgtWIP( //P_COPCCOrdPlnTgtWIPByOrderItem(
+                              P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                              P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod ) as _PCCOrderPlanCost     on  _Order.ObjectInternalID  = _PCCOrderPlanCost.ControllingObject
+                                                                                                                   and _Order.OrderID           = _PCCOrderPlanCost.OrderID
+                                                                                                                   and _Order.CompanyCode       = _PCCOrderPlanCost.CompanyCode
+                                                                                                                   and _Order.Plant             = _PCCOrderPlanCost.Plant
+                                                                                                                   and _Order.racct             = _PCCOrderPlanCost.CostElement
+                                                                                                                   and _Order.Partnercostobject = _PCCOrderPlanCost.PartnerCostObject
+                                                                                                                   and (
+                                                                                                                      _Order.OrderCategory                    = '04'
+                                                                                                                      or _Order.OrderCategory                 = '05'
+                                                                                                                    )
+                                                                                                                   and _PCCOrderPlanCost.ControllingValueType = '01'
+
+  //Target cost for order category 10/40
+    left outer to one join zP_COMfgOrderTargetByObject(
+                            P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                            P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod,
+                            P_PlanningCategory     : $parameters.P_PlanningCategory )     as _MfgOrderTgtCost      on _Order.ObjectInternalID   = _MfgOrderTgtCost.ControllingObject
+                                                                                                                   and _Order.OrderID           = _MfgOrderTgtCost.OrderID
+                                                                                                                   and _Order.CompanyCode       = _MfgOrderTgtCost.CompanyCode
+                                                                                                                   and _Order.Plant             = _MfgOrderTgtCost.Plant
+                                                                                                                   and _Order.racct             = _MfgOrderTgtCost.GLAccount
+                                                                                                                   and _Order.origin            = _MfgOrderTgtCost.origin
+                                                                                                                   and( _Order.OrderCategory     = '10'  or _Order.OrderCategory  = '40' )
+                                                                                                               
+  //Target cost for order category 04/05
+    left outer to one join zP_COPCCOrdPlnTgtWIPByOrderItm(
+                              P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                              P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod ) as _PCCOrderTgtCost      on  _Order.ObjectInternalID  = _PCCOrderTgtCost.ControllingObject
+                                                                                                                   and _Order.OrderID           = _PCCOrderTgtCost.OrderID
+                                                                                                                   and _Order.CompanyCode       = _PCCOrderTgtCost.CompanyCode
+                                                                                                                   and _Order.Plant             = _PCCOrderTgtCost.Plant
+                                                                                                                   and _Order.racct             = _PCCOrderTgtCost.CostElement
+                                                                                                                   and _Order.Partnercostobject = _PCCOrderPlanCost.PartnerCostObject
+                                                                                                                   and ( _Order.OrderCategory   = '04' or _Order.OrderCategory = '05' )
+                                                                                                                   and _PCCOrderTgtCost.ControllingValueType = '05'
+                                                                                                                   and _PCCOrderTgtCost.PlanningCategory     = $parameters.P_PlanningCategory
+
+  //WIP at target for order category 04/05/10/40
+    left outer to one join zP_COPCCOrdPlnTgtWIPByOrderItm(
+                              P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                              P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod ) as _PCCOrderWIP          on  _Order.ObjectInternalID  = _PCCOrderWIP.ControllingObject
+                                                                                                                   and _Order.OrderID           = _PCCOrderWIP.OrderID
+                                                                                                                   and _Order.CompanyCode       = _PCCOrderWIP.CompanyCode
+                                                                                                                   and _Order.Plant             = _PCCOrderWIP.Plant
+                                                                                                                   and _Order.racct             = _PCCOrderWIP.CostElement
+                                                                                                                   and _Order.Partnercostobject = _PCCOrderPlanCost.PartnerCostObject
+                                                                                                                   and _PCCOrderWIP.ControllingValueType = '06'
+    
+
+    left outer to one join ZP_COVarcRsltsAnlysByOrderItem(
+                           P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                           P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod )
+                         as _var   on  _Order.ObjectInternalID = _var.ControllingObject
+                                                                                      and _Order.OrderID          = _var.OrderID
+                                                                                      and _Order.CompanyCode      = _var.CompanyCode
+                                                                                      and _Order.Plant            = _var.Plant
+                                                                                      and _Order.racct            = _var.CostElement
+                                                                                      and _Order.Partnercostobject = _PCCOrderPlanCost.PartnerCostObject
+
+    left outer to one join P_COOutputQtyByOrderItem(
+                           P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                           P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod) on  _Order.ObjectInternalID = P_COOutputQtyByOrderItem.ControllingObject
+                                                                                      and _Order.OrderID          = P_COOutputQtyByOrderItem.OrderID
+                                                                                      and _Order.CompanyCode      = P_COOutputQtyByOrderItem.CompanyCode
+                                                                                      and _Order.Plant            = P_COOutputQtyByOrderItem.Plant
+
+{
+  key _Order.ControllingObject,
+  key _Order.OrderID,
+  key _Order.CompanyCode,
+  key _Order.Plant,
+  key _Order.OrderItem,
+  key _Order.racct,
+  key _Order.origin,
+  
+      _Order.OrderInternalID, //Object number of order header
+      _Order.ObjectInternalID,
+
+      _Order.OrderType,
+      _Order.OrderCategory,
+      _Order.ExternalOrder,
+      _Order.OrderDescription,
+      @Semantics.unitOfMeasure: true
+      _Order.BaseUnit,
+//      cast(CostCtrActivityTypeQtyUnit as fis_meinh) as BaseUnit,
+
+      //assignment
+      _Order.ControllingArea,
+      _Order.BusinessArea,
+      _Order.ProfitCenter,
+      _Order.ResponsibleCostCenter,
+      //WBS Element
+      _Order.WBSElementInternalID,
+      //Production Version
+      _Order.ProductionVersion,
+      
+      
+      //Sales Order
+      _Order.SalesOrder,
+
+      _Order.Material,
+      _Order.MRPPlant,
+      _Order.StorageLocation,
+      @Semantics.unitOfMeasure:true
+      _Order.ProductionUnit,
+
+      _Order.IsMarkedForDeletion,
+      _Order.MfgOrderHasMultipleItems,
+
+      _Order.ActualCostsCostingVariant,
+
+      //Process
+      _Order.PlannedReleaseDate,
+      _Order.PlannedCompletionDate,
+      _Order.CreatedByUser,
+      _Order.CreationDate,
+      _Order.LastChangedByUser,
+      _Order.LastChangeDate,
+
+      _Order.TechnicalCompletionDate,
+
+      //Order Header PPS Orders
+      _Order.ScheduledBasicEndDate,
+      _Order.ScheduledReleaseDate,
+      _Order.ActualStartDate,
+      _Order.ConfirmedEndDate,
+      _Order.ActualReleasedDate,
+
+      //Order Status
+      cast(
+        case
+             when _Order.IsMarkedForDeletion = 'X'
+                then 'CLSD'   //Order marked for deletion is also considerred as 'Closed'
+             else _Status.ControllingObjectStatus
+        end as fco_order_status)                                    as ControllingObjectStatus,
+
+      // Currencies
+      @Semantics.currencyCode: true
+      _Order.CompanyCodeCurrency,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Actual costs
+      /////////////////////////////////////////////////////////////////////////////////////
+
+      COALESCE(CreditActlCostInGlobalCrcy, 0)                       as CreditActlCostInGlobalCrcy,
+      COALESCE(DebitActlCostInGlobalCrcy, 0)                        as DebitActlCostInGlobalCrcy,
+      COALESCE(CrdtActlFxdCostInGlobalCrcy, 0)                      as CrdtActlFxdCostInGlobalCrcy,
+      COALESCE(DebitActlFxdCostInGlobalCrcy, 0)                     as DebitActlFxdCostInGlobalCrcy,
+      COALESCE(CreditActlDlvCostInGlobalCrcy, 0)                    as CreditActlDlvCostInGlobalCrcy,
+      COALESCE(CreditActlCostInObjCrcy, 0)                          as CreditActlCostInCoCodeCrcy,
+      COALESCE(DebitActlCostInObjCrcy, 0)                           as DebitActlCostInCoCodeCrcy,
+      COALESCE(DebitActlFixedCostInObjCrcy, 0)                      as DebitActlFixedCostInCoCodeCrcy,
+      COALESCE(CreditActlFixedCostInObjCrcy, 0)                     as CreditActlFixedCostInCCCrcy,
+      COALESCE(CreditActlDlvCostInObjCrcy, 0)                       as CreditActlDlvCostInObjCrcy,
+      
+      zP_COActualCostsByOrder2.ActualQuantity,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Standard costs: Debit Only
+      /////////////////////////////////////////////////////////////////////////////////////
+//      COALESCE(DebitStdCostInGlobalCrcy, 0)                         as DebitStdCostInGlobalCrcy,
+//      COALESCE(DebitStdFxdCostInGlobalCrcy, 0)                      as DebitStdFxdCostInGlobalCrcy,
+//      COALESCE(DebitStdCostInCoCodeCrcy, 0)                         as DebitStdCostInCoCodeCrcy,
+//      COALESCE(DebitStdFxdCostInCoCodeCrcy, 0)                      as DebitStdFxdCostInCoCodeCrcy,
+      COALESCE(_MfgOrderStdCost.DebitPlanCostInGlobalCrcy, 0)                                                                    as DebitStdCostInGlobalCrcy,
+      COALESCE(_MfgOrderStdCost.DebitPlanFxdCostInGlobalCrcy, 0)                                                                 as DebitStdFxdCostInGlobalCrcy,
+      COALESCE(_MfgOrderStdCost.DebitPlanCostInCoCodeCrcy, 0)                                                                    as DebitStdCostInCoCodeCrcy,
+      COALESCE(_MfgOrderStdCost.DebitPlanFxdCostInCoCodeCrcy, 0)                                                                 as DebitStdFxdCostInCoCodeCrcy,
+      
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Plan costs
+      /////////////////////////////////////////////////////////////////////////////////////
+//      COALESCE(CreditPlanCostInGlobalCrcy, 0)                       as CreditPlanCostInGlobalCrcy,
+//      COALESCE(DebitPlanCostInGlobalCrcy, 0)                        as DebitPlanCostInGlobalCrcy,
+//      COALESCE(CreditPlanFxdCostInGlobalCrcy, 0)                    as CrdtPlnFxdCostInGlobalCrcy,
+//      COALESCE(DebitPlanFxdCostInGlobalCrcy, 0)                     as DebitPlnFxdCostInGlobalCrcy,
+//      //plan costs in company code currency from acdocp
+//      COALESCE(CreditPlanCostInCoCodeCrcy, 0)                       as CreditPlanCostInCoCodeCrcy,
+//      COALESCE(DebitPlanCostInCoCodeCrcy, 0)                        as DebitPlanCostInCoCodeCrcy,
+//      COALESCE(CreditPlanFxdCostInCoCodeCrcy, 0)                    as CreditPlanFixedCostInCCCrcy,
+//      COALESCE(DebitPlanFxdCostInCoCodeCrcy, 0)                     as DebitPlanFixedCostInCoCodeCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderPlanCost.CreditPlanCostInGlobalCrcy, 0)
+        else COALESCE(_PCCOrderPlanCost.CreditPlanCostInGlobalCrcy, 0)
+      end                                                                                                                        as CreditPlanCostInGlobalCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderPlanCost.DebitPlanCostInGlobalCrcy, 0)
+        else COALESCE(_PCCOrderPlanCost.DebitPlanCostInGlobalCrcy, 0)
+      end                                                                                                                        as DebitPlanCostInGlobalCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderPlanCost.CreditPlanFxdCostInGlobalCrcy, 0)
+        else COALESCE(_PCCOrderPlanCost.CreditPlanFxdCostInGlobalCrcy, 0)
+      end                                                                                                                        as CrdtPlnFxdCostInGlobalCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderPlanCost.DebitPlanFxdCostInGlobalCrcy, 0)
+        else COALESCE(_PCCOrderPlanCost.DebitPlanFxdCostInGlobalCrcy, 0)
+      end                                                                                                                        as DebitPlnFxdCostInGlobalCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderPlanCost.DebitPlanCostInCoCodeCrcy, 0)
+        else COALESCE(_PCCOrderPlanCost.DebitPlanCostInCoCodeCrcy, 0)
+      end                                                                                                                        as DebitPlanCostInCoCodeCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderPlanCost.CreditPlanCostInCoCodeCrcy, 0)
+        else COALESCE(_PCCOrderPlanCost.CreditPlanCostInCoCodeCrcy, 0)
+      end                                                                                                                        as CreditPlanCostInCoCodeCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderPlanCost.CreditPlanFxdCostInCoCodeCrcy, 0)
+        else COALESCE(_PCCOrderPlanCost.CreditPlanFxdCostInCoCodeCrcy, 0)
+      end                                                                                                                        as CreditPlanFixedCostInCCCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderPlanCost.DebitPlanFxdCostInCoCodeCrcy, 0)
+        else COALESCE(_PCCOrderPlanCost.DebitPlanFxdCostInCoCodeCrcy, 0)
+      end                                                                                                                        as DebitPlanFixedCostInCoCodeCrcy,
+      
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Target costs & WIP
+      /////////////////////////////////////////////////////////////////////////////////////
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderTgtCost.CreditTargetCostInGlobalCrcy, 0)
+        else COALESCE(_PCCOrderTgtCost.CreditTargetCostInGlobalCrcy, 0)
+      end                                                                                                                        as CrdtTargetCostInGlobalCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderTgtCost.DebitTargetCostInGlobalCrcy, 0)
+        else COALESCE(_PCCOrderTgtCost.DebitTargetCostInGlobalCrcy, 0)
+      end                                                                                                                        as DebitTargetCostInGlobalCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderTgtCost.CreditTargetCostInCoCodeCrcy, 0)
+        else COALESCE(_PCCOrderTgtCost.CreditTargetCostInCoCodeCrcy, 0)
+      end                                                                                                                        as CreditTargetCostInCoCodeCrcy,
+      case when _Order.OrderCategory = '10' or _Order.OrderCategory = '40'
+        then COALESCE(_MfgOrderTgtCost.DebitTargetCostInCoCodeCrcy, 0)
+        else COALESCE(_PCCOrderTgtCost.DebitTargetCostInCoCodeCrcy, 0)
+      end                                                                                                                        as DebitTargetCostInCoCodeCrcy,
+      
+      _MfgOrderPlanCost.TotalQuantity as PlanQuantity,
+
+      // Target WIP: for control costs calculation, no exposure to order list page
+      COALESCE(_PCCOrderWIP.CreditTargetWIPInGlobalCrcy, 0)                                                             as CreditTargetWIPAmtInGlobalCrcy,
+      COALESCE(_PCCOrderWIP.DebitTargetWIPInGlobalCrcy, 0)                                                              as DebitTargetWIPAmtInGlobalCrcy,
+      COALESCE(_PCCOrderWIP.CreditTargetWIPInCoCodeCrcy, 0)                                                             as CreditTargetWIPAmtInCoCodeCrcy,
+      COALESCE(_PCCOrderWIP.DebitTargetWIPInCoCodeCrcy, 0)                                                              as DebitTargetWIPAmtInCoCodeCrcy,
+      
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Variances
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Variances in Global Currency
+      COALESCE(_var.InptPrVarcAmtInGlobalCrcy, 0)                        as InptPrVarcAmtInGlobalCrcy,
+      COALESCE(_var.InptQtyVarcAmtInGlobalCrcy, 0)                       as InptQtyVarcAmtInGlobalCrcy,
+      COALESCE(_var.RsceUsgeVarcAmtInGlobalCrcy, 0)                      as RsceUsgeVarcAmtInGlobalCrcy,
+      COALESCE(_var.InptRmngVarcAmtInGlobalCrcy, 0)                      as InptRmngVarcAmtInGlobalCrcy,
+      COALESCE(_var.MixedPrVarcAmtInGlobalCrcy, 0)                       as MixedPrVarcAmtInGlobalCrcy,
+      COALESCE(_var.OutpPrVarcAmtInGlobalCrcy, 0)                        as OutpPrVarcAmtInGlobalCrcy,
+      COALESCE(_var.LotSizeVarcAmtInGlobalCrcy, 0)                       as LotSizeVarcAmtInGlobalCrcy,
+      COALESCE(_var.OutpQtyVarcAmtInGlobalCrcy, 0)                       as OutpQtyVarcAmtInGlobalCrcy,
+      COALESCE(_var.OutpRmngVarcAmtInGlobalCrcy, 0)                      as OutpRmngVarcAmtInGlobalCrcy,
+      COALESCE(_var.ScrapVarcAmtInGlobalCrcy, 0)                         as ScrapVarcAmtInGlobalCrcy,
+
+      // Variances in Company Code Currency
+      COALESCE(_var.InptPriceVarcAmtInObjCrcy, 0)                        as InptPriceVarcAmtInCoCodeCrcy,
+      COALESCE(_var.InptQtyVarcAmtInObjCrcy, 0)                          as InptQtyVarcAmtInCoCodeCrcy,
+      COALESCE(_var.RsceUsgeVarcAmtInObjCrcy, 0)                         as RsceUsgeVarcAmtInCoCodeCrcy,
+      COALESCE(_var.InputRmngVarcAmtInObjCrcy, 0)                        as InputRmngVarcAmtInCoCodeCrcy,
+      COALESCE(_var.MixedPrVarcAmtInObjCrcy, 0)                          as MixedPrVarcAmtInCoCodeCrcy,
+      COALESCE(_var.OutpPrVarcAmtInObjCrcy, 0)                           as OutpPrVarcAmtInCoCodeCrcy,
+      COALESCE(_var.LotSizeVarcAmtInObjCrcy, 0)                          as LotSizeVarcAmtInCoCodeCrcy,
+      COALESCE(_var.OutpQtyVarcAmtInObjCrcy, 0)                          as OutpQtyVarcAmtInCoCodeCrcy,
+      COALESCE(_var.OutputRmngVarcAmtInObjCrcy, 0)                       as OutputRmngVarcAmtInCoCodeCrcy,
+      COALESCE(_var.ScrapVarcAmtInObjCrcy, 0)                            as ScrapVarcAmtInCoCodeCrcy,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Results Analysis
+      /////////////////////////////////////////////////////////////////////////////////////
+
+      //Key figures in Global Currency
+      COALESCE(WIPAmountInGlobalCrcy, 0)                            as WIPAmountInGlobalCrcy,
+      COALESCE(UnrlzdCostRsrvAmtInGlobCrcy, 0)                      as UnrlzdCostRsrvAmtInGlobCrcy,
+
+      //Key figures in Company Code Currency
+      COALESCE(WIPAmountInObjCrcy, 0)                               as WIPAmountInObjCrcy,
+      COALESCE(UnrlzdCostRsrvAmtInObjCrcy, 0)                       as UnrlzdCostRsrvAmtInCoCodeCrcy,//UnrlzdCostRsrvAmtInObjCrcy,
+
+      //WIP Quantity
+      COALESCE(WIPQuantity, 0)                                      as WIPQuantity,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Output Quantities
+      /////////////////////////////////////////////////////////////////////////////////////
+      COALESCE(PlanOutputQuantity, 0)                               as PlanOutputQuantity,
+      COALESCE(ActualOutputQuantity, 0)                             as ActualOutputQuantity,
+
+      // For Control Costs Calculation
+      COALESCE(_var.DebitScrapVarcAmtInGlobalCrcy, 0)                    as DebitScrapVarcAmtInGlobalCrcy,
+      COALESCE(_var.CrdtScrapVarcAmtInGlobalCrcy, 0)                     as CrdtScrapVarcAmtInGlobalCrcy,
+      COALESCE(_var.CreditScrapVarcAmtInObjCrcy, 0)                      as CreditScrapVarcAmtInCoCodeCrcy,
+      COALESCE(_var.DebitScrapVarcAmtInObjCrcy, 0)                       as DebitScrapVarcAmtInCoCodeCrcy
+
+}
+where _Order.OrderIsEventBasedPosting is initial 
+   or _Order.OrderIsEventBasedPosting = 'M'
