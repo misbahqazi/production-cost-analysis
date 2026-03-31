@@ -1,0 +1,78 @@
+@AbapCatalog.sqlViewName: 'ZPMFGORDPLNSTDBO'
+@VDM.viewType: #COMPOSITE
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@ClientHandling.algorithm: #SESSION_VARIABLE
+@AbapCatalog.buffering.status: #NOT_ALLOWED
+@Metadata.ignorePropagatedAnnotations: true
+//@VDM.private:true
+@ObjectModel.usageType.sizeCategory: #XL
+@ObjectModel.usageType.serviceQuality: #C
+@ObjectModel.usageType.dataClass: #TRANSACTIONAL
+//@EndUserText.label: 'Plan and Standard Costs Cube for Manufacturing Orders'
+//Planning category to distinguish order plan costs and standard costs
+//No fiscal year period restricition, for target costs calculation
+
+define view zP_COMfgOrderPlanStdByObject
+  with parameters
+    P_FromFiscalYearPeriod        : fis_jahrper,
+    P_ToFiscalYearPeriod          : fis_jahrper,
+    P_PlngCatIsForOrdReltdPlnCost : fins_plan_cat_for_planord
+
+  as select from zP_COMfgOrderPlanStdCube1(
+                 P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                 P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod )
+{
+  key   ControllingObject,
+        //  key   ControllingDebitCreditCode,
+        //          key   PlanningCategory, // plan cost & standard cost category
+  key   OrderID,
+  key   CompanyCode,
+  key   Plant,
+  key   GLAccount,
+  key   origin,
+  
+//  key   PlanningCategory,
+//  key   FiscalYearPeriod,
+
+        //units
+        //  key   CostSourceUnit,
+        //  key   GlobalCurrency,
+        //  key   CompanyCodeCurrency,
+
+        sum(CreditPlanCostInGlobalCrcy)                                                                                    as   CreditPlanCostInGlobalCrcy,
+        sum(DebitPlanCostInGlobalCrcy)                                                                                     as   DebitPlanCostInGlobalCrcy,
+        sum(CreditPlanFxdCostInGlobalCrcy)                                                                                 as   CreditPlanFxdCostInGlobalCrcy,
+        sum(DebitPlanFxdCostInGlobalCrcy)                                                                                  as   DebitPlanFxdCostInGlobalCrcy,
+        sum(CreditPlanCostInCoCodeCrcy)                                                                                    as   CreditPlanCostInCoCodeCrcy,
+        sum(DebitPlanCostInCoCodeCrcy)                                                                                     as   DebitPlanCostInCoCodeCrcy,
+        sum(CreditPlanFxdCostInCoCodeCrcy)                                                                                 as   CreditPlanFxdCostInCoCodeCrcy,
+        sum(DebitPlanFxdCostInCoCodeCrcy)                                                                                  as   DebitPlanFxdCostInCoCodeCrcy,
+
+        //Quantity
+               sum(TotalQuantity)                                                                                                 as   TotalQuantity
+}
+where
+  PlngCatIsForOrdReltdPlnCost = $parameters.P_PlngCatIsForOrdReltdPlnCost
+  and
+  (
+  // Standard cost and Plant costs is independent of Plan Category here
+// _MfgOrdPlngCat.PlanningCategory = $parameters.P_PlanningCategory 
+       (  PlngCatIsForOrdReltdPlnCost = 'X'
+          and FiscalYearPeriod >= $parameters.P_FromFiscalYearPeriod
+          and FiscalYearPeriod <= $parameters.P_ToFiscalYearPeriod 
+        ) 
+       or    PlngCatIsForMatlCostEstPlnCost = 'X' //standard costs are independent of fiscal year period
+       )
+//       and OrderID = '000000816707'
+group by
+  ControllingObject,
+  OrderID,
+  CompanyCode,
+  Plant,
+  GLAccount,
+  origin
+//  PlanningCategory,
+//  FiscalYearPeriod
+//  CostSourceUnit,
+//  GlobalCurrency,
+//  CompanyCodeCurrency
