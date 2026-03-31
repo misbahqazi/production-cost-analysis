@@ -1,0 +1,604 @@
+@AbapCatalog.sqlViewName: 'ZIFIPRDTCOST'
+@ClientHandling.type: #CLIENT_DEPENDENT
+@ClientHandling.algorithm: #SESSION_VARIABLE
+@AbapCatalog.compiler.compareFilter: true
+@Analytics: { dataCategory: #CUBE, dataExtraction.enabled: true }
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@AccessControl.privilegedAssociations:  [ '_CreatedByContactCard', '_LastChangedByUserContactCard' ]
+@EndUserText.label: 'CO Product Cost By Order and Item'
+@VDM.viewType: #COMPOSITE
+//@Search.searchable: true
+////@Analytics.dataCategory: #CUBE
+@ObjectModel.usageType.serviceQuality: #D
+@ObjectModel.usageType.sizeCategory: #XXL
+@ObjectModel.usageType.dataClass: #MIXED
+@AbapCatalog.buffering: {type: #NONE, numberOfKeyFields: 0, status: #NOT_ALLOWED}
+@Metadata.ignorePropagatedAnnotations: true
+
+@ObjectModel: { supportedCapabilities: [#ANALYTICAL_PROVIDER, #SQL_DATA_SOURCE, #CDS_MODELING_DATA_SOURCE],
+                modelingPattern: #ANALYTICAL_CUBE }
+                
+//@AccessControl.personalData.blocking: #BLOCKED_DATA_EXCLUDED
+//@VDM.lifecycle.contract.type: #SAP_INTERNAL_API 
+
+define view zI_COProductCostByOrderAndItem 
+  with parameters
+    P_FromFiscalYearPeriod  : fins_fyearperiod,
+    P_ToFiscalYearPeriod    : fins_fyearperiod,
+    P_PlanningCategory      : fcom_category,
+//    P_ResultAnalysisVersion : versn,
+    P_ValuationType         : bwtar_d
+
+  as select from zP_COProductCostByOrderAndItem(
+                 P_FromFiscalYearPeriod : $parameters.P_FromFiscalYearPeriod,
+                 P_ToFiscalYearPeriod   : $parameters.P_ToFiscalYearPeriod,
+                 P_PlanningCategory     : $parameters.P_PlanningCategory
+//                 ,P_RAVersion         : $parameters.P_ResultAnalysisVersion
+                 )
+
+  association [1..1] to I_CompanyCode               as _CompanyCode                  on  $projection.CompanyCode = _CompanyCode.CompanyCode
+  association [1..1] to I_ControllingArea           as _ControllingArea              on  $projection.ControllingArea = _ControllingArea.ControllingArea
+  association [0..1] to I_BusinessArea              as _BusinessArea                 on  $projection.BusinessArea = _BusinessArea.BusinessArea
+  association [0..1] to I_Currency                  as _ControllingAreaCurrency      on  $projection.controllingareacurrency = _ControllingAreaCurrency.Currency
+  association [0..1] to I_Currency                  as _CompanyCodeCurrency          on  $projection.CompanyCodeCurrency = _CompanyCodeCurrency.Currency
+  association [0..1] to I_Material                  as _Material                     on  $projection.Material = _Material.Material
+  association [0..1] to I_COPCCMaterialValuation    as _MaterialValuation            on  $projection.Material             = _MaterialValuation.Material
+                                                                                     and $projection.Plant                = _MaterialValuation.ValuationArea
+                                                                                     and _MaterialValuation.ValuationType = $parameters.P_ValuationType
+  association [0..1] to I_CostCenter                as _ResponsibleCostCenter        on  $projection.ControllingArea       =  _ResponsibleCostCenter.ControllingArea
+                                                                                     and $projection.ResponsibleCostCenter =  _ResponsibleCostCenter.CostCenter
+                                                                                     and $projection.ValidityDate          >= _ResponsibleCostCenter.ValidityStartDate
+                                                                                     and $projection.ValidityDate          <= _ResponsibleCostCenter.ValidityEndDate
+  association [0..1] to I_OrderSettlementRule       as _OrderSettlementRule          on  $projection.ObjectInternalID                       = _OrderSettlementRule.ControllingObject
+                                                                                     and _OrderSettlementRule.SettlementDistributionRuleGrp = '000'
+                                                                                     and _OrderSettlementRule.SettlementType                = 'PER'
+                                                                                     and _OrderSettlementRule.AccountAssignmentType     = 'MA'
+  association [0..1] to I_WBSElement                as _WBSElement                   on  $projection.WBSElementInternalID = _WBSElement.WBSElementInternalID
+  association [1..1] to E_ProductCostCtrlgOrder     as _Extension                    on  $projection.OrderID = _Extension.OrderID
+  association [0..1] to I_UserContactCard           as _CreatedByContactCard         on  $projection.CreatedByUser = _CreatedByContactCard.ContactCardID
+  association [0..1] to I_UserContactCard           as _LastChangedByUserContactCard on  $projection.CreatedByUser = _LastChangedByUserContactCard.ContactCardID
+  association [1..1] to I_GLAccount                 as _GLAccount                    on $projection.GLaccount      = _GLAccount.GLAccount
+                                                                                  and $projection.CompanyCode = _GLAccount.CompanyCode
+  association [1..1] to I_ManufacturingOrder as _OrderNumber on $projection.OrderID = _OrderNumber.ManufacturingOrder
+  association [1..1] to I_MfgOrderType                 as _MfgOrderType                on  $projection.OrderType = _MfgOrderType.ManufacturingOrderType
+  
+  association [0..1] to I_ProfitCenter   as _ProfitCenter on $projection.ControllingArea = _ProfitCenter.ControllingArea
+                                                         and $projection.ProfitCenter = _ProfitCenter.ProfitCenter
+  association [1] to ZI_STATUS_VH as _status on $projection.ControllingObjectStatus = _status.Status                                                        
+//  association [0..*] to I_FiscalYearPeriod as _fiscalperiod on $projection.
+  {
+  @ObjectModel.foreignKey.association: '_OrderNumber'
+  key OrderID,
+  key OrderItem,
+  @ObjectModel.foreignKey.association: '_GLAccount'
+  key racct as GLaccount,
+  key origin,
+
+      OrderInternalID, //Object number of order header
+      ObjectInternalID,
+
+      //    OrderID,
+      OrderType,
+      OrderCategory,
+      ExternalOrder,
+      
+      OrderDescription,
+      Plant,
+      @Semantics.unitOfMeasure:true
+      cast(BaseUnit as fis_meinh)                                                                                                                                                as   BaseUnit,
+
+      //assignment
+      ControllingArea,
+      @ObjectModel.foreignKey.association: '_CompanyCode'
+      CompanyCode,
+      BusinessArea,
+//      @ObjectModel.foreignKey.association: '_ProfitCenter'
+      ProfitCenter,
+      ResponsibleCostCenter,
+      //      WBSElement,
+      WBSElementInternalID,
+      //Production Version
+      ProductionVersion,
+
+      //Sales Order
+      SalesOrder,
+
+      IsMarkedForDeletion,
+      MfgOrderHasMultipleItems,
+
+      ActualCostsCostingVariant,
+
+      //Process
+      PlannedReleaseDate,
+      PlannedCompletionDate,
+      CreatedByUser,
+      CreationDate,
+      LastChangedByUser,
+      LastChangeDate,
+      TechnicalCompletionDate,
+
+      //Order Item
+      @ObjectModel.foreignKey.association: '_Material'
+      Material,
+      _MaterialValuation.ValuationClass                                                                                                                                          as   ValuationClass,
+      MRPPlant,
+      StorageLocation,
+      @Semantics.unitOfMeasure:true
+      ProductionUnit,
+
+      //Order Header PPS Orders
+      ScheduledBasicEndDate,
+      ScheduledReleaseDate,
+      ActualStartDate,
+      ConfirmedEndDate,
+      ActualReleasedDate,
+
+      ControllingObjectStatus,
+
+      // Currencies
+      @Semantics.currencyCode: true
+      _ControllingArea.ControllingAreaCurrency,
+      @Semantics.currencyCode: true
+      CompanyCodeCurrency,
+
+      @Semantics.businessDate.at: true
+      cast(substring( cast(tstmp_current_utctimestamp() as abap.char( 17 ) ), 1, 8 ) as abap.dats )                                                                              as   ValidityDate,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Actual Costs in Global/Controlling Area Currency
+      /////////////////////////////////////////////////////////////////////////////////////
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(CreditActlCostInGlobalCrcy as fis_cr_actlcost_in_cocrcy)                                                                                                              as   CreditActlCostInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(DebitActlCostInGlobalCrcy as fis_dr_actlcost_in_cocrcy)                                                                                                               as   DebitActlCostInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((CreditActlCostInGlobalCrcy + DebitActlCostInGlobalCrcy) as fis_actlcost_in_ctrlgareacrcy)                                                                            as   ActlCostInCtrlgAreaCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(CrdtActlFxdCostInGlobalCrcy as fis_cr_actlfxdcost_in_cocrcy)                                                                                                          as   CrdtActlFxdCostInCOCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(DebitActlFxdCostInGlobalCrcy as fis_dr_actlfxdcost_in_cocrcy)                                                                                                         as   DebitActlFxdCostInCOCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((CrdtActlFxdCostInGlobalCrcy + DebitActlFxdCostInGlobalCrcy) as fis_actlfixedcost_in_cocrcy)                                                                          as   ActlFixedCostInCtrlgAreaCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitActlCostInGlobalCrcy - DebitActlFxdCostInGlobalCrcy) as fis_actlvarblcost_in_cocrcy)                                                                            as   DebitActlVarblCostInCOCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((CreditActlCostInGlobalCrcy - CrdtActlFxdCostInGlobalCrcy) as fis_cr_actlvarblcost_in_cocrcy)                                                                         as   CrdtActlVarblCostInCOCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitActlCostInGlobalCrcy - DebitActlFxdCostInGlobalCrcy
+            + CreditActlCostInGlobalCrcy - CrdtActlFxdCostInGlobalCrcy) as fis_actlvarblcost_in_cocrcy)                                                                          as   ActlVarblCostInCtrlgAreaCrcy,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Actual Costs in Company Code Currency
+      /////////////////////////////////////////////////////////////////////////////////////
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(CreditActlCostInCoCodeCrcy as fis_cr_actlcost_in_cccrcy)                                                                                                                as   CreditActlCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(DebitActlCostInCoCodeCrcy as fis_dr_actlcost_in_cccrcy)                                                                                                                 as   DebitActlCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((CreditActlCostInCoCodeCrcy + DebitActlCostInCoCodeCrcy) as fis_actlcost_in_cccrcy)                                                                                        as   ActlCostInCoCodeCrcy,
+
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(DebitActlFixedCostInCoCodeCrcy as fis_dr_actlfxdcost_in_cccrcy)                                                                                                         as   DebitActlFixedCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(CreditActlFixedCostInCCCrcy as fis_cr_actlfxdcost_in_cccrcy)                                                                                                        as   CreditActlFixedCostInCCCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitActlFixedCostInCoCodeCrcy + CreditActlFixedCostInCCCrcy) as fis_actlfixedcost_in_cccrcy)                                                                         as   ActlFixedCostInCoCodeCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitActlCostInCoCodeCrcy - DebitActlFixedCostInCoCodeCrcy) as fis_dr_actlvarblcost_incccrcy)                                                                             as   DebitActlVarblCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((CreditActlCostInCoCodeCrcy - CreditActlFixedCostInCCCrcy) as fis_cr_actlvarblcost_incccrcy)                                                                           as   CreditActlVarblCostInCCCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitActlCostInCoCodeCrcy - DebitActlFixedCostInCoCodeCrcy +
+            CreditActlCostInCoCodeCrcy - CreditActlFixedCostInCCCrcy) as fis_actlvarblcost_in_cccrcy)                                                                             as   ActlVarblCostInCoCodeCrcy,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Standard costs: Debit Only
+      /////////////////////////////////////////////////////////////////////////////////////
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(DebitStdCostInGlobalCrcy as fis_dr_stdcost_in_globalcrcy)                                                                                                             as   DebitStdCostInGlobalCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(DebitStdFxdCostInGlobalCrcy as fis_dr_stdfxdcost_inglobalcrcy)                                                                                                        as   DebitStdFxdCostInGlobalCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(DebitStdCostInGlobalCrcy - DebitStdFxdCostInGlobalCrcy as fis_dr_stdvarblcost_inglobcrcy)                                                                             as   DebitStdVarblCostInGlobalCrcy,
+
+      //Standard Cost in Company Code Currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(DebitStdCostInCoCodeCrcy as fis_dr_stdcost_in_cocodecrcy)                                                                                                             as   DebitStdCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(DebitStdFxdCostInCoCodeCrcy as fis_dr_stdfxdcost_incocodecrcy)                                                                                                        as   DebitStdFxdCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(DebitStdCostInCoCodeCrcy - DebitStdFxdCostInCoCodeCrcy as fis_dr_stdvarblcost_incccrcy)                                                                               as   DebitStdVarblCostInCoCodeCrcy,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Plan Costs in Global Currency
+      /////////////////////////////////////////////////////////////////////////////////////
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(CreditPlanCostInGlobalCrcy as fis_cr_plancost_in_cocrcy)                                                                                                              as   CreditPlanCostInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(DebitPlanCostInGlobalCrcy as fis_dr_plancost_in_cocrcy)                                                                                                               as   DebitPlanCostInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitPlanCostInGlobalCrcy + CreditPlanCostInGlobalCrcy) as fis_plancost_in_ctrlgareacrcy)                                                                            as   PlanCostInCtrlgAreaCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(CrdtPlnFxdCostInGlobalCrcy as fis_cr_plnfxdcost_in_cocrcy)                                                                                                            as   CrdtPlnFxdCostInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(DebitPlnFxdCostInGlobalCrcy as fis_dr_plnfxdcost_in_cocrcy)                                                                                                           as   DebitPlnFxdCostInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitPlnFxdCostInGlobalCrcy + CrdtPlnFxdCostInGlobalCrcy) as fis_planfixedcost_in_cocrcy)                                                                            as   PlanFixedCostInCtrlgAreaCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitPlanCostInGlobalCrcy - DebitPlnFxdCostInGlobalCrcy) as fis_dr_plnvarblcost_in_cocrcy)                                                                           as   DebitPlnVarblCostInCOCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((CreditPlanCostInGlobalCrcy - CrdtPlnFxdCostInGlobalCrcy) as fis_cr_plnvarblcost_in_cocrcy)                                                                           as   CrdtPlnVarblCostInCOCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitPlanCostInGlobalCrcy - DebitPlnFxdCostInGlobalCrcy +
+            CreditPlanCostInGlobalCrcy - CrdtPlnFxdCostInGlobalCrcy)  as fis_planvarblcost_in_cocrcy)                                                                            as   PlanVarblCostInCtrlgAreaCrcy,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Plan Costs in Company Code Currency
+      /////////////////////////////////////////////////////////////////////////////////////
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(CreditPlanCostInCoCodeCrcy as fis_cr_plancost_in_cccrcy)                                                                                                                as   CreditPlanCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(DebitPlanCostInCoCodeCrcy as fis_dr_plancost_in_cccrcy)                                                                                                                 as   DebitPlanCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitPlanCostInCoCodeCrcy + CreditPlanCostInCoCodeCrcy) as fis_plancost_in_cccrcy)                                                                                        as   PlanCostInCoCodeCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(DebitPlanFixedCostInCoCodeCrcy as fis_dr_planfxdcost_in_cccrcy)                                                                                                         as   DebitPlanFixedCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(CreditPlanFixedCostInCCCrcy as fis_cr_planfxdcost_in_cccrcy)                                                                                                        as   CreditPlanFixedCostInCCCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitPlanFixedCostInCoCodeCrcy + CreditPlanFixedCostInCCCrcy) as fis_planfixedcost_in_cccrcy)                                                                         as   PlanFixedCostInCoCodeCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitPlanCostInCoCodeCrcy - DebitPlanFixedCostInCoCodeCrcy) as fis_dr_plnvarblcost_in_cccrcy)                                                                             as   DebitPlanVarblCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((CreditPlanCostInCoCodeCrcy - CreditPlanFixedCostInCCCrcy) as fis_cr_plnvarblcost_in_cccrcy)                                                                           as   CreditPlanVarblCostInCCCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitPlanCostInCoCodeCrcy - DebitPlanFixedCostInCoCodeCrcy +
+            CreditPlanCostInCoCodeCrcy - CreditPlanFixedCostInCCCrcy) as fis_planvarblcost_in_cccrcy)                                                                             as   PlanVarblCostInCoCodeCrcy,
+
+      // Target costs in Global Currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(case MfgOrderHasMultipleItems
+      when 'X' then case OrderItem
+      when '0000' then (0-DebitTargetCostInGlobalCrcy)
+      else CrdtTargetCostInGlobalCrcy
+      end else CrdtTargetCostInGlobalCrcy
+      end as fis_cr_tgtcost_in_cocrcy)                                                                                                                                           as   CrdtTargetCostInCtrlgAreaCrcy,
+      //      cast(CrdtTargetCostInGlobalCrcy as fis_cr_tgtcost_in_cocrcy)                                                                               as CrdtTargetCostInCtrlgAreaCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(DebitTargetCostInGlobalCrcy as fis_dr_tgtcost_in_cocrcy)                                                                                                              as   DebitTargetCostInCtrlgAreaCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(case MfgOrderHasMultipleItems
+      when 'X' then case OrderItem
+      when '0000' then 0
+      else (CrdtTargetCostInGlobalCrcy + DebitTargetCostInGlobalCrcy)
+      end else (CrdtTargetCostInGlobalCrcy + DebitTargetCostInGlobalCrcy)
+      end as fis_cr_tgtcost_in_cocrcy)                                                                                                                                           as   TargetCostInCtrlgAreaCrcy,
+      //      @DefaultAggregation: #SUM
+      //      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      //      cast((CrdtTargetCostInGlobalCrcy + DebitTargetCostInGlobalCrcy) as fis_cr_tgtcost_in_cocrcy)                                                                               as   TargetCostInCtrlgAreaCrcy,
+
+      //Target Costs in Company Code Currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(case MfgOrderHasMultipleItems
+      when 'X' then case OrderItem
+      when '0000' then (0-DebitTargetCostInCoCodeCrcy)
+      else CreditTargetCostInCoCodeCrcy
+      end else CreditTargetCostInCoCodeCrcy
+      end as fis_cr_tgtcost_in_cccrcy)                                                                                                                                          as   CreditTargetCostInCoCodeCrcy,
+      //      cast(CreditTargetCostInCoCodeCrcy as fis_cr_tgtcost_in_cccrcy)                                                                               as CreditTargetCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(DebitTargetCostInCoCodeCrcy as fis_dr_tgtcost_in_cccrcy)                                                                                                                as   DebitTargetCostInCoCodeCrcy,
+
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(case MfgOrderHasMultipleItems
+      when 'X' then case OrderItem
+      when '0000' then 0
+      else (CreditTargetCostInCoCodeCrcy + DebitTargetCostInCoCodeCrcy)
+      end else (CreditTargetCostInCoCodeCrcy + DebitTargetCostInCoCodeCrcy)
+      end as fis_tgtcost_in_cccrcy)                                                                                                                                             as   TargetCostInCoCodeCrcy,
+      //      @DefaultAggregation: #SUM
+      //      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      //      cast((CreditTargetCostInCoCodeCrcy + DebitTargetCostInCoCodeCrcy) as fis_tgtcost_in_cccrcy)                                                                                     as   TargetCostInCoCodeCrcy,
+
+      // Control Costs at plan in global currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((CreditPlanCostInGlobalCrcy - CreditTargetWIPAmtInGlobalCrcy - CrdtScrapVarcAmtInGlobalCrcy) as fis_cr_planctrlcost_inglobcrcy)                                       as   CrdtPlanCtrlCostInGlobCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitPlanCostInGlobalCrcy - DebitTargetWIPAmtInGlobalCrcy - DebitScrapVarcAmtInGlobalCrcy) as fis_dr_planctrlcost_inglobcrcy)                                        as   DebitPlanCtrlCostInGlobCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((CreditPlanCostInGlobalCrcy - CreditTargetWIPAmtInGlobalCrcy - CrdtScrapVarcAmtInGlobalCrcy
+            + DebitPlanCostInGlobalCrcy - DebitTargetWIPAmtInGlobalCrcy - DebitScrapVarcAmtInGlobalCrcy) as fis_planctrlcost_in_globcrcy)                                        as   PlanCtrlCostInGlobCrcy,
+
+      // Control Costs at plan in company code currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((CreditPlanCostInCoCodeCrcy - CreditTargetWIPAmtInCoCodeCrcy - CreditScrapVarcAmtInCoCodeCrcy) as fis_cr_planctrlcost_incccrcy)                                                as   CrdtPlanCtrlCostInCCCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitPlanCostInCoCodeCrcy - DebitTargetWIPAmtInCoCodeCrcy - DebitScrapVarcAmtInCoCodeCrcy) as fis_dr_planctrlcost_incccrcy)                                                   as   DebitPlanCtrlCostInCCCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((CreditPlanCostInCoCodeCrcy - CreditTargetWIPAmtInCoCodeCrcy - CreditScrapVarcAmtInCoCodeCrcy
+            + DebitPlanCostInCoCodeCrcy - DebitTargetWIPAmtInCoCodeCrcy - DebitScrapVarcAmtInCoCodeCrcy) as fis_planctrlcost_in_cccrcy)                                                   as   PlanCtrlCostInCoCodeCrcy,
+
+      //Control Costs at actual in global currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((CreditActlCostInGlobalCrcy - CreditTargetWIPAmtInGlobalCrcy - CrdtScrapVarcAmtInGlobalCrcy) as fis_cr_actlctrlcost_inglobcrcy)                                    as   CrdtActlCtrlCostInGlobCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitActlCostInGlobalCrcy - DebitTargetWIPAmtInGlobalCrcy - DebitScrapVarcAmtInGlobalCrcy) as fis_dr_actlctrlcost_inglobcrcy)                                        as   DebitActlCtrlCostInGlobCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((CreditActlCostInGlobalCrcy - CreditTargetWIPAmtInGlobalCrcy - CrdtScrapVarcAmtInGlobalCrcy
+            + DebitActlCostInGlobalCrcy - DebitTargetWIPAmtInGlobalCrcy - DebitScrapVarcAmtInGlobalCrcy) as fis_actlctrlcost_in_globcrcy)                                        as   ActlCtrlCostInGlobCrcy,
+
+      //Control Costs at actual in company code currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((CreditActlCostInCoCodeCrcy - CreditTargetWIPAmtInCoCodeCrcy - CreditScrapVarcAmtInCoCodeCrcy) as fis_cr_actlctrlcost_in_cccrcy)                                            as   CrdtActlCtrlCostInCCCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitActlCostInCoCodeCrcy - DebitTargetWIPAmtInCoCodeCrcy - DebitScrapVarcAmtInCoCodeCrcy) as fis_dr_actlctrlcost_in_cccrcy)                                                  as   DebitActlCtrlCostInCCCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((CreditActlCostInCoCodeCrcy - CreditTargetWIPAmtInCoCodeCrcy - CreditScrapVarcAmtInCoCodeCrcy
+            + DebitActlCostInCoCodeCrcy - DebitTargetWIPAmtInCoCodeCrcy - DebitScrapVarcAmtInCoCodeCrcy) as fis_actlctrlcost_in_cccrcy)                                                   as   ActlCtrlCostInCoCodeCrcy,
+
+
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Variances
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Variances in Global Currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(InptPrVarcAmtInGlobalCrcy as fis_inptprvarcamt_in_cocrcy)                                                                                                             as   InptPrVarcAmtInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(InptQtyVarcAmtInGlobalCrcy as fis_inptqtyvarcamt_in_cocrcy)                                                                                                           as   InptQtyVarcAmtInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(RsceUsgeVarcAmtInGlobalCrcy as fis_rsceusgevarcamt_in_cocrcy)                                                                                                         as   RsceUsgeVarcAmtInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(InptRmngVarcAmtInGlobalCrcy as fis_inptrmngvarcamt_in_cocrcy)                                                                                                         as   InptRmngVarcAmtInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(MixedPrVarcAmtInGlobalCrcy as fis_mixedprvarcamt_in_cocrcy)                                                                                                           as   MixedPrVarcAmtInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(OutpPrVarcAmtInGlobalCrcy as fis_outpprvarcamt_in_cocrcy)                                                                                                             as   OutpPrVarcAmtInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(LotSizeVarcAmtInGlobalCrcy as fis_lotsizevarcamt_in_cocrcy)                                                                                                           as   LotSizeVarcAmtInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(OutpQtyVarcAmtInGlobalCrcy as fis_qutpqtyvarcamt_in_cocrcy)                                                                                                           as   OutpQtyVarcAmtInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(OutpRmngVarcAmtInGlobalCrcy as fis_outprmngvarcamt_in_cocrcy)                                                                                                         as   OutpRmngVarcAmtInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(ScrapVarcAmtInGlobalCrcy as fis_scrapvarcamt_in_cocrcy)                                                                                                               as   ScrapVarcAmtInCtrlgAreaCrcy,
+
+      // Variances in Company Code Currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(InptPriceVarcAmtInCoCodeCrcy as fis_inptprvarcamt_in_cccrcy)                                                                                                            as   InptPriceVarcAmtInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(InptQtyVarcAmtInCoCodeCrcy as fis_inptqtyvarcamt_in_cccrcy)                                                                                                             as   InptQtyVarcAmtInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(RsceUsgeVarcAmtInCoCodeCrcy as fis_rsceusgevarcamt_in_cccrcy)                                                                                                           as   RsceUsgeVarcAmtInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(InputRmngVarcAmtInCoCodeCrcy as fis_inptrmngvarcamt_in_cccrcy)                                                                                                          as   InputRmngVarcAmtInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(MixedPrVarcAmtInCoCodeCrcy as fis_mixedprvarcamt_in_cccrcy)                                                                                                             as   MixedPrVarcAmtInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(OutpPrVarcAmtInCoCodeCrcy as fis_outpprvarcamt_in_cccrcy)                                                                                                               as   OutpPrVarcAmtInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(LotSizeVarcAmtInCoCodeCrcy as fis_lotsizevarcamt_in_cccrcy)                                                                                                             as   LotSizeVarcAmtInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(OutpQtyVarcAmtInCoCodeCrcy as fis_outpqtyvarcamt_in_cccrcy)                                                                                                             as   OutpQtyVarcAmtInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(OutputRmngVarcAmtInCoCodeCrcy as fis_outprmngvarcamt_in_cccrcy)                                                                                                         as   OutputRmngVarcAmtInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(ScrapVarcAmtInCoCodeCrcy as fis_scrapvarcamt_in_cccrcy)                                                                                                                 as   ScrapVarcAmtInCoCodeCrcy,
+
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Results Analysis
+      /////////////////////////////////////////////////////////////////////////////////////
+
+      //Key figures in Global Currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(WIPAmountInGlobalCrcy as fis_wipcost_in_ctrlgareacrcy)                                                                                                                as   WIPCostInCtrlgAreaCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(UnrlzdCostRsrvAmtInGlobCrcy as fis_abgruekfk)                                                                                                                         as   UnrlzdCostRsrvAmtInGlobCrcy,
+      //Key figures in Company Code Currency
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(WIPAmountInObjCrcy as fis_wipcost_in_cccrcy)                                                                                                                         as   WIPCostInCoCodeCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(UnrlzdCostRsrvAmtInCoCodeCrcy as fis_abgruekfk)                                                                                                                          as   UnrlzdCostRsrvAmtInCoCodeCrcy,
+
+      //Total WIP is calculated as WIP - reserves, which is different from KOC4.
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast(WIPAmountInGlobalCrcy - UnrlzdCostRsrvAmtInGlobCrcy as abgbesges)                                                                                                     as   TotalWIPAmountInCOCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast(WIPAmountInObjCrcy - UnrlzdCostRsrvAmtInCoCodeCrcy as abgbesges)                                                                                                         as   TotalWIPAmountInCoCodeCrcy,
+
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Output Quantities
+      /////////////////////////////////////////////////////////////////////////////////////
+      @DefaultAggregation: #SUM
+      @Semantics: { quantity : {unitOfMeasure: 'BaseUnit'} }
+      cast(PlanOutputQuantity as fis_plan_output_quantity)                                                                                                                       as   PlanOutputQuantity,
+      @DefaultAggregation: #SUM
+      @Semantics: { quantity : {unitOfMeasure: 'BaseUnit'} }
+      cast(ActualOutputQuantity as fis_actual_output_quantity)                                                                                                                   as   ActualOutputQuantity,
+      @DefaultAggregation: #SUM
+      @Semantics: { quantity : {unitOfMeasure: 'BaseUnit'} }
+      ActualQuantity,
+      @Semantics: { quantity : {unitOfMeasure: 'BaseUnit'} }  
+      PlanQuantity,
+
+      /////////////////////////////////////////////////////////////////////////////////////
+      // Calculates deviations
+      /////////////////////////////////////////////////////////////////////////////////////
+      //Actual - Plan deviation
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitActlCostInGlobalCrcy - DebitPlanCostInGlobalCrcy) as fis_dr_actlplndiffcostincocrcy)                                                                            as   DebitActlPlnDiffCostInCOCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitActlCostInCoCodeCrcy - DebitPlanCostInCoCodeCrcy) as fis_dractlplndiffcostincccrcy)                                                                                  as   DebitActlPlnDiffCostInCCCrcy,
+
+      cast( case when DebitPlanCostInGlobalCrcy <> 0
+        then round(division((DebitActlCostInGlobalCrcy - DebitPlanCostInGlobalCrcy), DebitPlanCostInGlobalCrcy, 5) * 100, 2)
+        else case (DebitActlCostInGlobalCrcy - DebitPlanCostInGlobalCrcy)
+               when 0 then 0
+               else 100
+             end
+      end as fis_dr_cocrcy_actlplndiffpct )                                                                                                                                      as   CtrlgAreaCrcyActlPlanDiffPct,
+
+      cast( case when DebitPlanCostInCoCodeCrcy <> 0
+        then round(division((DebitActlCostInCoCodeCrcy
+                             - DebitPlanCostInCoCodeCrcy),
+                           DebitPlanCostInCoCodeCrcy, 5) * 100, 2)
+        else case (DebitActlCostInCoCodeCrcy - DebitPlanCostInCoCodeCrcy)
+               when 0 then 0
+               else 100
+             end
+      end as fis_dr_cccrcy_actlplndiffpct )                                                                                                                                      as   CoCodeCrcyActlPlanDiffPercent,
+
+      //Target - Actual deviation
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'ControllingAreaCurrency'} }
+      cast((DebitActlCostInGlobalCrcy - DebitTargetCostInGlobalCrcy) as fis_dr_actltgtdiffcostincocrcy)                                                                          as   DebitActlTgtDiffCostInCOCrcy,
+      @DefaultAggregation: #SUM
+      @Semantics: { amount : {currencyCode: 'CompanyCodeCurrency'} }
+      cast((DebitActlCostInCoCodeCrcy - DebitTargetCostInCoCodeCrcy) as fis_dractltgtdiffcostincccrcy)
+                                                                                                                                                                                 as   DebitActlTgtDiffCostInCCCrcy,
+      cast( case when DebitTargetCostInGlobalCrcy <> 0
+              then round(division((DebitActlCostInGlobalCrcy - DebitTargetCostInGlobalCrcy), DebitTargetCostInGlobalCrcy, 5) * 100, 2)
+              else case (DebitActlCostInGlobalCrcy - DebitTargetCostInGlobalCrcy)
+                     when 0 then 0
+                     else 100
+                   end
+            end as fis_dr_cocrcy_actltgtdiffpct )                                                                                                                                as   CtrlgAreaCrcyActlTgtDiffPct,
+
+      cast( case when DebitTargetCostInCoCodeCrcy <> 0
+       then round(division((DebitActlCostInCoCodeCrcy
+                            - DebitTargetCostInCoCodeCrcy),
+                          DebitTargetCostInCoCodeCrcy, 5) * 100, 2)
+       else case (DebitActlCostInCoCodeCrcy - DebitTargetCostInCoCodeCrcy)
+              when 0 then 0
+              else 100
+            end
+      end as fis_dr_cccrcy_actltgtdiffpct )                                                                                                                                      as   CoCodeCrcyActlTgtDiffPercent,
+
+      //Output quantity
+      @DefaultAggregation: #SUM
+      @Semantics: { quantity : {unitOfMeasure: 'BaseUnit'} }
+      ActualOutputQuantity - PlanOutputQuantity                                                                                                                                  as   ActlPlanDiffOutputQuantity,
+
+      cast(case when PlanOutputQuantity <> 0
+        then round(division(ActualOutputQuantity - PlanOutputQuantity, PlanOutputQuantity, 5) * 100, 2)
+        else case when ActualOutputQuantity = 0
+               then 0
+               else 100
+             end end as fis_actlplandiffoutpqtypercent)                                                                                                                          as   ActlPlanDiffOutpQtyPercent,   
+
+      _CompanyCode,
+      _OrderNumber,
+      _MfgOrderType,
+      _ProfitCenter,
+      _ControllingArea,
+      _BusinessArea,
+      _status,
+      _ControllingAreaCurrency,
+      _CompanyCodeCurrency,
+      _Material,
+      _GLAccount,
+      _WBSElement,
+      _CreatedByContactCard,
+      _LastChangedByUserContactCard
+
+}
