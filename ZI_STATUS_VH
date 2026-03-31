@@ -1,0 +1,25 @@
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AbapCatalog.sqlViewName: 'ZISTATVH'
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Status Value Help'
+@Metadata.ignorePropagatedAnnotations: true
+@ObjectModel.usageType:{
+    serviceQuality: #X,
+    sizeCategory: #S,
+    dataClass: #MIXED
+}
+@ObjectModel.resultSet.sizeCategory: #XS
+define view ZI_STATUS_VH as select from jest
+{   
+    @ObjectModel.text.element: [ 'Description' ]
+    key cast('OPEN' as abap.char(4)) as Status,
+    @Semantics.text: true
+    cast('Open' as abap.char(10)) as Description
+}
+union select from jest  
+{   
+    @ObjectModel.text.element: [ 'Description' ]
+    key cast('CLSD' as abap.char(4)) as Status,
+    @Semantics.text: true
+    cast('Closed' as abap.char(10)) as Description
+}
