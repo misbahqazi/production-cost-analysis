@@ -1,0 +1,152 @@
+
+@AbapCatalog.sqlViewName: 'ZPCOACTCOSTBYORD'
+@ClientHandling.type: #CLIENT_DEPENDENT
+@ClientHandling.algorithm: #SESSION_VARIABLE
+@AbapCatalog.compiler.compareFilter: true
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+//@EndUserText.label: 'Private view for CO Order Actual Costs'
+@VDM.viewType: #COMPOSITE
+@VDM.private:true
+@ObjectModel.usageType.serviceQuality: #D
+@ObjectModel.usageType.sizeCategory: #XXL
+@ObjectModel.usageType.dataClass: #TRANSACTIONAL
+@Metadata.ignorePropagatedAnnotations: true
+
+define view zp_COactualcostbyOrder 
+
+with parameters
+    P_FromFiscalYearPeriod : fis_jahrper,
+    P_ToFiscalYearPeriod   : fis_jahrper
+  as select from I_COActualLineItem
+{
+  key ControllingObject,
+      OrderID,
+      CompanyCode,
+      CostElement,
+      case when OriginCostCenter is initial
+           then case when Material is initial
+           then ' ' else concat(Plant,concat('/',Material))
+        end
+            when OriginCostCtrActivityType is initial
+            then OriginCostCenter
+        else concat( OriginCostCenter,concat('/',OriginCostCtrActivityType) )
+      end as origin,
+      PartnerCostObject,
+
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'A' or OriginCtrlgDebitCreditCode = 'L'
+              then AmountInGlobalCurrency
+          else
+              0
+      end)                               as CreditActlCostInGlobalCrcy,
+
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'L'
+              then AmountInGlobalCurrency
+          else
+              0
+      end)                               as CreditActlDlvCostInGlobalCrcy,
+
+
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'H' or OriginCtrlgDebitCreditCode = 'S'
+              then AmountInGlobalCurrency
+          else
+              0
+      end)                               as DebitActlCostInGlobalCrcy,
+
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'A' or OriginCtrlgDebitCreditCode = 'L'
+              then FixedAmountInGlobalCrcy
+          else
+              0
+      end)                               as CrdtActlFxdCostInGlobalCrcy,
+
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'H' or OriginCtrlgDebitCreditCode = 'S'
+              then FixedAmountInGlobalCrcy
+          else
+              0
+      end)                               as DebitActlFxdCostInGlobalCrcy,
+
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'A' or OriginCtrlgDebitCreditCode = 'L'
+              then AmountInObjectCurrency
+          else
+              0
+      end)                               as CreditActlCostInObjCrcy,
+
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'L'
+              then AmountInObjectCurrency
+          else
+              0
+      end)                               as CreditActlDlvCostInObjCrcy,
+
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'H' or OriginCtrlgDebitCreditCode = 'S'
+              then AmountInObjectCurrency
+          else
+              0
+      end)                               as DebitActlCostInObjCrcy,
+
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'A' or OriginCtrlgDebitCreditCode = 'L'
+              then case 
+                   when AmountInGlobalCurrency <> 0
+                       then cast( 
+                            round(
+                            cast( division(FixedAmountInGlobalCrcy, AmountInGlobalCurrency, 6) as abap.dec(14, 6) )
+                            * AmountInObjectCurrency, 2)
+                            as abap.dec( 23, 2 ) ) 
+                       else 0
+                   end 
+              else 0
+          end)                           as CreditActlFixedCostInObjCrcy,
+          
+      sum(case
+          when OriginCtrlgDebitCreditCode = 'H' or OriginCtrlgDebitCreditCode = 'S'
+              then case 
+                   when AmountInGlobalCurrency <> 0
+                       then cast( 
+                            round(
+                            cast( division(FixedAmountInGlobalCrcy, AmountInGlobalCurrency, 6) as abap.dec(14, 6) )
+                            * AmountInObjectCurrency, 2)
+                            as abap.dec( 23, 2 ) ) 
+                       else 0
+                   end 
+              else 0
+          end)                           as DebitActlFixedCostInObjCrcy,
+          
+      sum(TotalQuantity)                 as ActualQuantity,
+      sum(FixedQuantity)                 as ActualFixedQuantity
+
+}
+where
+  (
+        AccountAssignmentType = 'OR'
+    or  AccountAssignmentType = 'OP'
+  )
+  and(
+        FiscalYearPeriod      >= $parameters.P_FromFiscalYearPeriod
+    and FiscalYearPeriod      <= $parameters.P_ToFiscalYearPeriod
+  )
+  and(
+  OrderCategory = '04'
+  or OrderCategory = '05'
+  or OrderCategory = '10'
+  or OrderCategory = '40'
+  )
+group by
+  ControllingObject,
+  OrderID,
+  CompanyCode,
+  CostElement,
+  Material,
+  Plant,
+  OriginCostCenter,OriginCostCtrActivityType,
+  PartnerCostObject
+   
+  
+  
+  
