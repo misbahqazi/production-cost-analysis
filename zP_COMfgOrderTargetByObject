@@ -1,0 +1,59 @@
+@AbapCatalog.sqlViewName: 'ZPFIMFGORDTGTBO'
+@VDM.viewType: #COMPOSITE
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@ClientHandling.algorithm: #SESSION_VARIABLE
+@AbapCatalog.buffering.status: #NOT_ALLOWED
+@Metadata.ignorePropagatedAnnotations: true
+//@VDM.private:true
+@ObjectModel.usageType.sizeCategory: #XL
+@ObjectModel.usageType.serviceQuality: #C
+@ObjectModel.usageType.dataClass: #TRANSACTIONAL
+
+@AbapCatalog.preserveKey: true
+//@EndUserText.label: 'Target Costs Cube for Manufacturing Orders'
+//On-the-fly target cost calculation only for manufacturing orders with order category 10/40
+
+define view zP_COMfgOrderTargetByObject
+  with parameters
+    //From/To fiscal year period should restrict actual output quantity only
+    //While plan cost and standard costs should be independent of fiscal year period
+    P_FromFiscalYearPeriod        : fis_jahrper,
+    P_ToFiscalYearPeriod          : fis_jahrper,
+    P_PlanningCategory            : fcom_category
+
+  as select from zP_COMfgOrderTargetCube1(
+                                 P_FromFiscalYearPeriod   : $parameters.P_FromFiscalYearPeriod,
+                                 P_ToFiscalYearPeriod     : $parameters.P_ToFiscalYearPeriod,
+                                 P_PlanningCategory       : $parameters.P_PlanningCategory )
+{
+  key  ControllingObject,
+  key  OrderID,  
+  key  CompanyCode,
+  key  Plant,
+  key  GLAccount,
+  key  origin,
+       //key  CostOriginGroup,
+       //  key  CostSourceUnit,
+       //  key  GlobalCurrency,
+       //  key  CompanyCodeCurrency,
+
+       sum( CreditTargetCostInGlobalCrcy )               as CreditTargetCostInGlobalCrcy,
+       sum( DebitTargetCostInGlobalCrcy )                as DebitTargetCostInGlobalCrcy,
+       sum( CreditTargetCostInCoCodeCrcy )               as CreditTargetCostInCoCodeCrcy,
+       sum( DebitTargetCostInCoCodeCrcy )                as DebitTargetCostInCoCodeCrcy,
+       sum( TotalQuantity) as TargetQuantity
+       
+
+} //calculate either target costs @plan or target costs @standard costs
+group by
+  ControllingObject,
+  OrderID,
+  GLAccount,
+  CompanyCode,
+  Plant,
+  origin
+//CostOriginGroup,
+//  CostSourceUnit,
+//  GlobalCurrency,
+//  CompanyCodeCurrency
+
