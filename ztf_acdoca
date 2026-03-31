@@ -1,0 +1,19 @@
+@EndUserText.label: 'Get latest JCDS entry'
+@ClientHandling.type: #CLIENT_DEPENDENT
+define table function ztf_acdoca
+//with parameters p_objnr : j_objnr
+returns {
+  rclnt     : mandt;
+  rbukrs    : bukrs;
+  racct     : racct;
+  aufnr     : aufnr;
+  ukostl    : usp_kostl;
+  ulstar    : usp_lstar;
+  matnr     : matnr;
+  werks     : werks_d;
+  objnr     : j_objnr;
+  parob1    : j_objnr;
+  origin    : accas;
+  runit     : meins;
+}
+implemented by method ZCL_acdoca=>GET_sorted;
